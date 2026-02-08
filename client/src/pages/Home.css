@@ -1,0 +1,137 @@
+/**
+ * ONE PIECE CARD GAME - Home Page Styles
+ */
+
+.home {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.home-bg {
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(231, 76, 60, 0.15), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(255, 215, 0, 0.1), transparent 40%);
+}
+
+.home-content {
+  text-align: center;
+  z-index: 1;
+  padding: 2rem;
+}
+
+.home-title {
+  font-size: 4rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.25rem;
+  text-shadow: 0 0 40px rgba(255, 215, 0, 0.3);
+}
+
+.home-subtitle {
+  font-size: 2rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.home-tagline {
+  font-size: 1.125rem;
+  color: #888;
+  margin-bottom: 3rem;
+  letter-spacing: 2px;
+}
+
+.home-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+
+.btn {
+  padding: 0.875rem 2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  min-width: 200px;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 8px 24px rgba(231, 76, 60, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-large {
+  padding: 1rem 3rem;
+  font-size: 1.25rem;
+}
+
+/* Features */
+.home-features {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: #888;
+  font-size: 0.875rem;
+}
+
+.feature-icon {
+  font-size: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .home-title {
+    font-size: 2.5rem;
+  }
+  
+  .home-subtitle {
+    font-size: 1.25rem;
+    letter-spacing: 4px;
+  }
+  
+  .home-features {
+    gap: 1.5rem;
+  }
+  
+  .feature {
+    font-size: 0.75rem;
+  }
+}

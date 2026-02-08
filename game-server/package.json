@@ -1,0 +1,18 @@
+{
+  "name": "card-game-server",
+  "version": "0.1.0",
+  "description": "卡牌游戏实时对战服务器",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

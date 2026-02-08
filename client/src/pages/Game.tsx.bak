@@ -1,0 +1,705 @@
+/**
+ * ONE PIECE CARD GAME - Battle Board
+ * Layout matches pencil-new.pen "OP TCG Battle Board" (JKtu6)
+ * Game flow follows official rule_manual.md
+ *
+ * Structure:
+ *  Top:    Opponent Hand Area (overlap cards + stats bar)
+ *  Middle: Board Area (Opp Board | Divider | Player Board) + Preview Sidebar
+ *  Bottom: Player Hand Area (action buttons + stats bar + hand cards)
+ */
+
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  useGame, useIsMyTurn, useCanPlayCard, useCanAttack, useIsDefending,
+} from '../contexts/GameContext'
+import { socketService } from '../services/socket'
+import CardComponent, { CardBack } from '../components/Card'
+import type { Card, CardSlot } from '../contexts/GameContext'
+import './Game.css'
+
+// ============ Phase Prompt Logic (Official Rules) ============
+function getPhaseInfo(
+  gamePhase: string,
+  battleStep: string,
+  isMyTurn: boolean,
+  isDefending: boolean,
+  turnNumber: number,
+  pendingAttack: any,
+) {
+  if (!isMyTurn && !isDefending) {
+    return { badge: '等待中', hint: '对手正在行动...' }
+  }
+
+  switch (gamePhase) {
+    case 'refresh':
+      return {
+        badge: '① 重置阶段',
+        hint: '所有休息状态的卡牌将重置为活跃状态，附加的DON!!卡归还费用区',
+      }
+    case 'draw':
+      return {
+        badge: '② 抽卡阶段',
+        hint: turnNumber === 1 && isMyTurn
+          ? '先手第一回合不抽卡'
+          : '从牌组抽1张卡加入手牌',
+      }
+    case 'don':
+      return {
+        badge: '③ DON!!阶段',
+        hint: turnNumber === 1 && isMyTurn
+          ? '先手第一回合只放置1张DON!!卡到费用区'
+          : '从DON!!牌组放置2张DON!!卡到费用区',
+      }
+    case 'main':
+      return {
+        badge: '④ 主要阶段',
+        hint: '可执行: 出牌(角色/舞台/事件) · 贴DON!! · 发动效果 · 战斗',
+      }
+    case 'battle':
+      if (isDefending) {
+        if (battleStep === 'block') {
+          return {
+            badge: '⚔ 格挡阶段',
+            hint: '可使用拥有【阻挡者】效果的活跃角色来格挡攻击',
+          }
+        }
+        if (battleStep === 'counter') {
+          return {
+            badge: '⚔ 反击阶段',
+            hint: '可丢弃手牌中有反击值的角色卡 或 使用[Counter]事件卡来增加力量',
+          }
+        }
+        if (battleStep === 'damage') {
+          return { badge: '⚔ 伤害结算', hint: '正在结算伤害...' }
+        }
+        return { badge: '⚔ 战斗', hint: '对手正在攻击' }
+      }
+      if (pendingAttack) {
+        return { badge: '⚔ 战斗中', hint: '等待对手响应...' }
+      }
+      return {
+        badge: '④ 主要阶段 (战斗)',
+        hint: '选择活跃的角色或领袖发起攻击，或结束回合',
+      }
+    case 'end':
+      return { badge: '⑤ 结束阶段', hint: '回合结束，触发回合结束效果' }
+    default:
+      return { badge: gamePhase, hint: '' }
+  }
+}
+
+export default function Game() {
+  const { roomId: _roomId } = useParams<{ roomId: string }>()
+  const navigate = useNavigate()
+  const { state, dispatch } = useGame()
+
+  const isMyTurn = useIsMyTurn()
+  const canPlayCard = useCanPlayCard()
+  const canAttack = useCanAttack()
+  const isDefending = useIsDefending()
+
+  // UI state
+  const [hoveredCard, setHoveredCard] = useState<Card | null>(null)
+  const [selectedCard, setSelectedCard] = useState<string | null>(null)
+  const [targeting, setTargeting] = useState<'none' | 'attack' | 'don'>('none')
+  const [donAttachMode, setDonAttachMode] = useState(false)
+
+  // Refs for attack line
+  const attackerRef = useRef<HTMLDivElement | null>(null)
+  const targetRef = useRef<HTMLDivElement | null>(null)
+  const [attackLine, setAttackLine] = useState<{x1:number,y1:number,x2:number,y2:number}|null>(null)
+
+  // ============ Socket Handlers ============
+  useEffect(() => {
+    const socket = socketService.getSocket()
+    if (!socket) { navigate('/lobby'); return }
+
+    const handleGameStart = (data: any) => {
+      dispatch({
+        type: 'GAME_START',
+        player: data.players.find((p: any) => p.isSelf),
+        opponent: data.players.find((p: any) => !p.isSelf),
+        phase: data.phase,
+        turnNumber: data.turnNumber,
+        currentTurn: data.currentTurn,
+      })
+    }
+    const handleGameUpdate = (data: any) => {
+      dispatch({
+        type: 'GAME_UPDATE',
+        state: {
+          gamePhase: data.phase,
+          turnNumber: data.turnNumber,
+          currentTurn: data.currentTurn,
+          pendingAttack: data.pendingAttack,
+          battleStep: data.battleStep,
+          winner: data.winner,
+        },
+        players: data.players,
+      })
+      if (data.actionLog?.length > 0) {
+        data.actionLog.slice(-5).forEach((entry: any) =>
+          dispatch({ type: 'ADD_LOG', message: entry.message })
+        )
+      }
+    }
+    const handleAttackDeclared = (data: any) => {
+      dispatch({
+        type: 'SET_PENDING_ATTACK',
+        attack: data.pendingAttack,
+        battleStep: data.battleStep,
+      })
+    }
+    const handleGameEnd = (data: any) => {
+      dispatch({ type: 'SET_WINNER', winner: data.winner })
+    }
+    const handleError = (data: any) => {
+      dispatch({ type: 'SET_ERROR', error: data.message })
+    }
+
+    socket.on('game:start', handleGameStart)
+    socket.on('game:update', handleGameUpdate)
+    socket.on('attack:declared', handleAttackDeclared)
+    socket.on('game:end', handleGameEnd)
+    socket.on('error', handleError)
+    if (!state.player) socket.emit('game:sync')
+
+    return () => {
+      socket.off('game:start', handleGameStart)
+      socket.off('game:update', handleGameUpdate)
+      socket.off('attack:declared', handleAttackDeclared)
+      socket.off('game:end', handleGameEnd)
+      socket.off('error', handleError)
+    }
+  }, [dispatch, navigate, state.player])
+
+  // ============ Action handlers ============
+
+  // Play card from hand
+  const handleHandCardClick = useCallback((card: Card) => {
+    if (!isMyTurn) return
+    if (state.gamePhase === 'main') {
+      if (card.cardType === 'CHARACTER') {
+        const usedSlots = state.player?.characters.length || 0
+        if (usedSlots < 5) {
+          socketService.playCharacter(card.instanceId, usedSlots)
+        } else {
+          dispatch({ type: 'SET_ERROR', error: '角色区已满(5张)，请先移除一张角色' })
+        }
+      } else if (card.cardType === 'EVENT') {
+        socketService.playEvent(card.instanceId)
+      } else if (card.cardType === 'STAGE') {
+        socketService.playStage(card.instanceId)
+      }
+    }
+    // Counter step: play counter cards
+    if (isDefending && state.battleStep === 'counter') {
+      if (card.counter) {
+        socketService.playCounter(card.instanceId)
+      }
+    }
+  }, [isMyTurn, state.gamePhase, state.player?.characters.length, isDefending, state.battleStep, dispatch])
+
+  // Select field card for attack
+  const handleFieldCardClick = useCallback((cardId: string, isLeader: boolean) => {
+    if (donAttachMode) {
+      // Attach DON to this card
+      socketService.attachDon(cardId)
+      setDonAttachMode(false)
+      return
+    }
+    if (!canAttack) return
+    // Check the card/leader is active
+    if (isLeader) {
+      if (state.player?.leader.state !== 'ACTIVE') return
+      setSelectedCard('leader')
+    } else {
+      const slot = state.player?.characters.find(s => s.card.instanceId === cardId)
+      if (!slot || slot.state !== 'ACTIVE') return
+      setSelectedCard(cardId)
+    }
+    setTargeting('attack')
+  }, [canAttack, donAttachMode, state.player])
+
+  // Choose attack target
+  const handleTargetClick = useCallback((targetId: string) => {
+    if (targeting !== 'attack' || !selectedCard) return
+    const attackerId = selectedCard === 'leader'
+      ? state.player!.leader.card.instanceId
+      : selectedCard
+    socketService.declareAttack(attackerId, targetId)
+    setSelectedCard(null)
+    setTargeting('none')
+    setAttackLine(null)
+  }, [targeting, selectedCard, state.player])
+
+  // DON attach mode
+  const handleDonClick = useCallback(() => {
+    if (!isMyTurn || state.gamePhase !== 'main') return
+    setDonAttachMode(prev => !prev)
+    setTargeting('none')
+    setSelectedCard(null)
+  }, [isMyTurn, state.gamePhase])
+
+  // Cancel any targeting
+  const cancelAction = useCallback(() => {
+    setSelectedCard(null)
+    setTargeting('none')
+    setDonAttachMode(false)
+    setAttackLine(null)
+  }, [])
+
+  // Update attack line when hovering target
+  const updateAttackLine = useCallback((targetEl: HTMLDivElement | null) => {
+    if (!attackerRef.current || !targetEl) { setAttackLine(null); return }
+    const aRect = attackerRef.current.getBoundingClientRect()
+    const tRect = targetEl.getBoundingClientRect()
+    setAttackLine({
+      x1: aRect.left + aRect.width / 2,
+      y1: aRect.top + aRect.height / 2,
+      x2: tRect.left + tRect.width / 2,
+      y2: tRect.top + tRect.height / 2,
+    })
+  }, [])
+
+  // Phase & prompt info
+  const phaseInfo = getPhaseInfo(
+    state.gamePhase, state.battleStep, isMyTurn,
+    !!isDefending, state.turnNumber, state.pendingAttack,
+  )
+
+  // Is in main/battle phase where attack is possible
+  const inBattlePhase = state.gamePhase === 'battle' || state.gamePhase === 'main'
+
+  // ============ Render helpers ============
+
+  // Render a card slot on the board
+  const renderCardSlot = (
+    slot: CardSlot | null,
+    opts: { isLeader?: boolean; isOpponent?: boolean; zoneClass?: string } = {}
+  ) => {
+    if (!slot) {
+      return <div className="empty-slot" />
+    }
+    const { isLeader, isOpponent, zoneClass } = opts
+    const cardId = slot.card.instanceId
+    const isSelected = selectedCard === (isLeader ? 'leader' : cardId)
+    const isRested = slot.state === 'RESTED'
+    const isTargetable = targeting === 'attack' && isOpponent &&
+      (isLeader || isRested) // can attack opp leader or rested characters
+    const isAttachable = donAttachMode && !isOpponent
+
+    return (
+      <div
+        className={[
+          'card-slot',
+          zoneClass || '',
+          isSelected ? 'selected' : '',
+          isRested ? 'rested' : '',
+          isTargetable ? 'targetable' : '',
+          isAttachable ? 'attachable' : '',
+        ].filter(Boolean).join(' ')}
+        ref={el => {
+          if (isSelected && !isOpponent) attackerRef.current = el
+          if (isTargetable) targetRef.current = el
+        }}
+        onClick={() => {
+          if (isTargetable) {
+            handleTargetClick(isLeader ? 'leader' : cardId)
+          } else if (isAttachable) {
+            socketService.attachDon(isLeader ? 'leader' : cardId)
+            setDonAttachMode(false)
+          } else if (!isOpponent && inBattlePhase) {
+            handleFieldCardClick(cardId, !!isLeader)
+          }
+        }}
+        onMouseEnter={(e) => {
+          setHoveredCard(slot.card)
+          if (isTargetable) updateAttackLine(e.currentTarget as HTMLDivElement)
+        }}
+        onMouseLeave={() => {
+          if (isTargetable) setAttackLine(null)
+        }}
+      >
+        <CardComponent card={slot.card} slot={slot} size="small"
+          selectable={!isOpponent && inBattlePhase && !isRested}
+          selected={isSelected}
+          targetable={isTargetable}
+        />
+        {slot.attachedDon > 0 && (
+          <div className="don-badge">DON!! x{slot.attachedDon}</div>
+        )}
+      </div>
+    )
+  }
+
+  // ============ RENDER ============
+  return (
+    <div className="game">
+      {/* ═══ Phase Prompt Bar (top overlay) ═══ */}
+      <div className="phase-prompt-bar">
+        <span className="phase-badge">{phaseInfo.badge}</span>
+        <span className="phase-hint">{phaseInfo.hint}</span>
+      </div>
+
+      {/* ═══ TOP: Opponent Hand Area ═══ */}
+      <div className="opp-hand-area">
+        <div className="opp-hand-cards">
+          {Array.from({ length: state.opponent?.handCount || 0 }).map((_, i) => (
+            <div key={i} className="hand-card-wrap">
+              <CardBack />
+            </div>
+          ))}
+        </div>
+        <div className="opp-stats-bar">
+          <span className="name">{state.opponent?.name || '对手'}</span>
+          <div className="stats-right">
+            <span className="stat-life">❤️ {state.opponent?.lifeCount ?? '?'}</span>
+            <span className="stat-deck">📚 {state.opponent?.deckCount ?? '?'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ MIDDLE: Board + Preview ═══ */}
+      <div className="middle-section">
+        {/* Board Area */}
+        <div className="board-area">
+
+          {/* --- Opponent Board (MainArea left, LifeCol right) --- */}
+          <div className="opponent-board">
+            <div className="main-area">
+              {/* CharRow (top for opponent) */}
+              <div className="char-row">
+                {(state.opponent?.characters || []).map(slot => (
+                  <div key={slot.card.instanceId}>
+                    {renderCardSlot(slot, { isOpponent: true })}
+                  </div>
+                ))}
+                {(state.opponent?.characters.length || 0) === 0 && (
+                  <span style={{color:'#333',fontSize:14,fontWeight:700}}>CHARACTER AREA</span>
+                )}
+              </div>
+              {/* MidRow: Deck | Stage | Leader */}
+              <div className="mid-row">
+                <div className="zone deck-zone">
+                  <span className="zone-label gray">DECK</span>
+                  <div className="deck-zone-card">OP</div>
+                  <span className="deck-count-label">{state.opponent?.deckCount ?? 0}</span>
+                </div>
+                <div className="zone stage-zone">
+                  <span className="zone-label gray">STAGE</span>
+                  {state.opponent?.stage ? (
+                    <div className="card-slot" onMouseEnter={() => setHoveredCard(state.opponent!.stage!.card)}>
+                      <CardComponent card={state.opponent.stage.card} size="small" />
+                    </div>
+                  ) : <div className="empty-slot" />}
+                </div>
+                <div className="zone leader-zone">
+                  <span className="zone-label gold">LEADER</span>
+                  {state.opponent?.leader &&
+                    renderCardSlot(state.opponent.leader, { isLeader: true, isOpponent: true, zoneClass: 'leader-zone' })
+                  }
+                </div>
+              </div>
+              {/* BotRow: Trash | Cost Area | DON Deck */}
+              <div className="bot-row">
+                <div className="zone zone-fixed trash-zone">
+                  <span style={{color:'#666',fontSize:9,fontWeight:700,letterSpacing:1}}>TRASH</span>
+                  <span className="zone-count">{state.opponent?.trash?.length || 0}</span>
+                </div>
+                <div className="zone zone-fill cost-zone">
+                  <span className="cost-zone-label">COST AREA</span>
+                  {/* Opponent DON cards (visual) */}
+                  {Array.from({ length: Math.min(state.opponent?.donActive || 0, 10) }).map((_, i) => (
+                    <div key={`od-a-${i}`} className="don-card-small">DON!!</div>
+                  ))}
+                  {Array.from({ length: Math.min(state.opponent?.donRested || 0, 10) }).map((_, i) => (
+                    <div key={`od-r-${i}`} className="don-card-small rested">DON!!</div>
+                  ))}
+                </div>
+                <div className="zone zone-fixed">
+                  <span style={{color:'#C9A962',fontSize:9,fontWeight:700,letterSpacing:1}}>DON!!</span>
+                  <span className="zone-count">{state.opponent?.donDeckCount ?? 0}</span>
+                </div>
+              </div>
+            </div>
+            {/* Opponent Life Col (right side) */}
+            <div className="life-col">
+              <span className="life-label">LIFE</span>
+              <div className="life-stack">
+                {Array.from({ length: state.opponent?.lifeCount || 0 }).map((_, i) => (
+                  <div key={i} className="life-card-wrap"><div className="life-card">OP</div></div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* --- Divider --- */}
+          <div className="board-divider" />
+
+          {/* --- Player Board (LifeCol left, MainArea right) --- */}
+          <div className="player-board">
+            {/* Player Life Col (left side) */}
+            <div className="life-col">
+              <span className="life-label">LIFE</span>
+              <div className="life-stack">
+                {Array.from({ length: state.player?.lifeCount || 0 }).map((_, i) => (
+                  <div key={i} className="life-card-wrap"><div className="life-card">OP</div></div>
+                ))}
+              </div>
+            </div>
+            <div className="main-area">
+              {/* CharRow */}
+              <div className="char-row">
+                {(state.player?.characters || []).map(slot => (
+                  <div key={slot.card.instanceId}>
+                    {renderCardSlot(slot, { isOpponent: false })}
+                  </div>
+                ))}
+                {(state.player?.characters.length || 0) === 0 && (
+                  <span style={{color:'#333',fontSize:14,fontWeight:700}}>CHARACTER AREA</span>
+                )}
+              </div>
+              {/* MidRow: Leader | Stage | Deck */}
+              <div className="mid-row">
+                <div className="zone leader-zone">
+                  <span className="zone-label gold">LEADER</span>
+                  {state.player?.leader &&
+                    renderCardSlot(state.player.leader, { isLeader: true, isOpponent: false, zoneClass: 'leader-zone' })
+                  }
+                </div>
+                <div className="zone stage-zone">
+                  <span className="zone-label gray">STAGE</span>
+                  {state.player?.stage ? (
+                    <div className="card-slot" onMouseEnter={() => setHoveredCard(state.player!.stage!.card)}>
+                      <CardComponent card={state.player.stage.card} size="small" />
+                    </div>
+                  ) : <div className="empty-slot" />}
+                </div>
+                <div className="zone deck-zone">
+                  <span className="zone-label gray">DECK</span>
+                  <div className="deck-zone-card">OP</div>
+                  <span className="deck-count-label">{state.player?.deckCount ?? 0}</span>
+                </div>
+              </div>
+              {/* BotRow: DON Deck | Cost Area | Trash */}
+              <div className="bot-row">
+                <div className="zone zone-fixed">
+                  <span style={{color:'#C9A962',fontSize:9,fontWeight:700,letterSpacing:1}}>DON!!</span>
+                  <span className="zone-count">{state.player?.donDeckCount ?? 0}</span>
+                </div>
+                <div className="zone zone-fill cost-zone">
+                  <span className="cost-zone-label">COST AREA</span>
+                  {Array.from({ length: Math.min(state.player?.donActive || 0, 10) }).map((_, i) => (
+                    <div key={`pd-a-${i}`}
+                      className={`don-card-small ${donAttachMode ? 'selectable' : ''}`}
+                      onClick={donAttachMode ? undefined : handleDonClick}
+                    >DON!!</div>
+                  ))}
+                  {Array.from({ length: Math.min(state.player?.donRested || 0, 10) }).map((_, i) => (
+                    <div key={`pd-r-${i}`} className="don-card-small rested">DON!!</div>
+                  ))}
+                </div>
+                <div className="zone zone-fixed trash-zone">
+                  <span style={{color:'#666',fontSize:9,fontWeight:700,letterSpacing:1}}>TRASH</span>
+                  <span className="zone-count">{state.player?.trash?.length || 0}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ PREVIEW SIDEBAR (right) ═══ */}
+        <div className="preview-sidebar">
+          <div className="card-preview-area">
+            <span className="preview-title">卡片详情</span>
+            {hoveredCard ? (
+              <div className="preview-card-large">
+                <div className="prev-top-bar">
+                  <span className="prev-cost">{hoveredCard.cost ?? ''}</span>
+                  <span className="prev-power">{hoveredCard.power ?? ''}</span>
+                  {hoveredCard.counter && <span className="prev-counter">+{hoveredCard.counter}</span>}
+                </div>
+                <div className="prev-img-area">
+                  <img
+                    src={`/cards/${hoveredCard.cardNumber}.png`}
+                    alt={hoveredCard.name}
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                </div>
+                <div className="prev-info-area">
+                  <div className="prev-card-name">{hoveredCard.nameCn || hoveredCard.name}</div>
+                  <div className="prev-card-trait">
+                    {hoveredCard.cardType} · {hoveredCard.trait || hoveredCard.color}
+                  </div>
+                  {hoveredCard.effect && (
+                    <div className="prev-effect">{hoveredCard.effect}</div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <span className="preview-placeholder">悬停卡牌查看详情</span>
+            )}
+          </div>
+          {/* Game Log */}
+          <div className="game-log">
+            {state.actionLog.slice(-20).map((log, i) => (
+              <div key={i} className="log-entry">{log.message}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ BOTTOM: Player Hand Area ═══ */}
+      <div className="plr-hand-area">
+        {/* Action Buttons */}
+        <div className="action-buttons">
+          {isMyTurn && state.gamePhase === 'main' && (
+            <>
+              <button className="btn-battle" onClick={() => socketService.endMainPhase()}>
+                进入战斗
+              </button>
+              <button className="btn-end-turn" onClick={() => socketService.endTurn()}>
+                结束回合
+              </button>
+              <button className="btn-end-turn" onClick={handleDonClick}>
+                {donAttachMode ? '取消贴DON' : '贴DON!!'}
+              </button>
+            </>
+          )}
+          {isMyTurn && state.gamePhase === 'battle' && !state.pendingAttack && (
+            <button className="btn-end-turn" onClick={() => socketService.endTurn()}>
+              结束回合
+            </button>
+          )}
+          {(targeting !== 'none' || donAttachMode) && (
+            <button className="btn-cancel-action" onClick={cancelAction}>
+              ✕ 取消
+            </button>
+          )}
+        </div>
+
+        {/* Player Stats Bar */}
+        <div className="plr-stats-bar">
+          <span className="name">{state.player?.name || '你'} (Player)</span>
+          <div className="stats-right">
+            <span className="stat-life">❤️ {state.player?.lifeCount ?? '?'}</span>
+            <span className="stat-deck">📚 {state.player?.deckCount ?? '?'}</span>
+          </div>
+        </div>
+
+        {/* Player Hand Cards */}
+        <div className="plr-hand-cards">
+          {(state.player?.hand || []).map((card) => (
+            <div key={card.instanceId}
+              className={`hand-card-wrap ${canPlayCard ? 'selectable' : ''}`}
+              onClick={() => handleHandCardClick(card)}
+              onMouseEnter={() => setHoveredCard(card)}
+            >
+              <CardComponent card={card} size="small"
+                selectable={canPlayCard}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ═══ ATTACK LINE SVG OVERLAY ═══ */}
+      {attackLine && (
+        <div className="attack-line-overlay">
+          <svg>
+            <line className="attack-line"
+              x1={attackLine.x1} y1={attackLine.y1}
+              x2={attackLine.x2} y2={attackLine.y2}
+            />
+            {/* Arrow head */}
+            <circle cx={attackLine.x2} cy={attackLine.y2} r={6}
+              fill="#EF5350" opacity={0.8}
+            />
+          </svg>
+        </div>
+      )}
+
+      {/* ═══ PENDING ATTACK LINE (when attack declared) ═══ */}
+      {state.pendingAttack && (
+        <div className="attack-line-overlay">
+          <svg>
+            <text x="50%" y="50%" textAnchor="middle" fill="#EF5350" fontSize="16" fontWeight="bold">
+              ⚔ {state.pendingAttack.attackerPower} vs {state.pendingAttack.targetPower}
+            </text>
+          </svg>
+        </div>
+      )}
+
+      {/* ═══ DEFENDER OVERLAY (Block / Counter) ═══ */}
+      {isDefending && state.battleStep === 'block' && (
+        <div className="defender-overlay">
+          <h2>🛡 格挡阶段</h2>
+          <p>
+            对手发起攻击！力量 {state.pendingAttack?.attackerPower} →
+            {state.pendingAttack?.isTargetLeader ? '你的领袖' : '你的角色'} (力量 {state.pendingAttack?.targetPower})
+          </p>
+          <p>是否使用拥有【阻挡者】效果的角色进行格挡？</p>
+          <div className="def-actions">
+            <button onClick={() => socketService.skipBlocker()}>不格挡</button>
+            {/* Blockers: player characters with Blocker keyword that are active */}
+            {(state.player?.characters || [])
+              .filter(s => s.state === 'ACTIVE' && s.card.effect?.includes('Blocker'))
+              .map(s => (
+                <button key={s.card.instanceId} className="primary"
+                  onClick={() => socketService.declareBlocker(s.card.instanceId)}
+                >
+                  用 {s.card.nameCn || s.card.name} 格挡
+                </button>
+              ))
+            }
+          </div>
+        </div>
+      )}
+
+      {isDefending && state.battleStep === 'counter' && (
+        <div className="defender-overlay">
+          <h2>⚡ 反击阶段</h2>
+          <p>
+            攻击力量 {state.pendingAttack?.attackerPower} vs
+            防御力量 {state.pendingAttack?.targetPower}
+          </p>
+          <p>
+            可丢弃手牌中有反击值的角色卡增加力量，或使用[Counter]事件卡。
+            也可以横置活跃DON!!来使用事件牌的反击效果。
+          </p>
+          <div className="def-actions">
+            <button onClick={() => socketService.skipCounter()}>不反击</button>
+            {(state.player?.hand || [])
+              .filter(c => c.counter && c.counter > 0)
+              .map(c => (
+                <button key={c.instanceId} className="primary"
+                  onClick={() => socketService.playCounter(c.instanceId)}
+                >
+                  {c.nameCn || c.name} (+{c.counter})
+                </button>
+              ))
+            }
+          </div>
+        </div>
+      )}
+
+      {/* ═══ GAME END ═══ */}
+      {state.phase === 'ended' && (
+        <div className="game-end-overlay">
+          <h1>{state.winner === state.player?.id ? '🎉 胜利!' : '💀 败北'}</h1>
+          <button onClick={() => navigate('/lobby')}>返回大厅</button>
+        </div>
+      )}
+
+      {/* ═══ ERROR TOAST ═══ */}
+      {state.error && (
+        <div className="error-toast" onClick={() => dispatch({ type: 'SET_ERROR', error: null })}>
+          {state.error}
+        </div>
+      )}
+    </div>
+  )
+}

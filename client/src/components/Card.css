@@ -1,0 +1,118 @@
+/* ============ Card Wrapper ============ */
+.card-wrap {
+  position: relative;
+  flex-shrink: 0;
+  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s;
+  border-radius: 6px;
+  overflow: visible;
+}
+.card-inner {
+  position: relative;
+}
+.card-wrap .card-img {
+  display: block;
+  border-radius: 6px;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* States */
+.card-wrap.selectable { cursor: pointer; }
+.card-wrap.selectable:hover {
+  transform: translateY(-12px) scale(1.05);
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(201,169,98,0.6), 0 0 0 2px rgba(201,169,98,0.5);
+}
+.card-wrap.selected {
+  transform: translateY(-16px) scale(1.06);
+  outline: 3px solid #FFD700;
+  box-shadow: 0 16px 32px rgba(255,215,0,0.4), 0 0 20px rgba(255,215,0,0.8);
+  z-index: 21;
+  animation: selected-float 1.5s ease-in-out infinite;
+}
+@keyframes selected-float {
+  0%, 100% { transform: translateY(-16px) scale(1.06); }
+  50% { transform: translateY(-20px) scale(1.08); }
+}
+.card-wrap.targetable {
+  cursor: crosshair;
+  animation: target-glow 1s ease-in-out infinite;
+}
+@keyframes target-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(239,83,80,0.5), 0 0 0 2px rgba(239,83,80,0.3); }
+  50% { box-shadow: 0 0 24px rgba(239,83,80,0.9), 0 0 0 3px rgba(239,83,80,0.6); }
+}
+
+/* Power badge */
+.card-power-badge {
+  position: absolute;
+  bottom: 2px; left: 2px;
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  display: flex; gap: 2px; align-items: center;
+  line-height: 1.2;
+}
+.power-plus { color: #4ADE80; font-size: 9px; }
+
+/* DON count */
+.card-don-count {
+  position: absolute;
+  top: 2px; right: 2px;
+  background: rgba(255,215,0,0.92);
+  color: #000;
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.card-don-count:hover {
+  background: rgba(255,100,100,0.95);
+  transform: scale(1.1);
+}
+.card-don-count:active {
+  transform: scale(0.95);
+}
+
+/* Cost badge */
+.card-cost-badge {
+  position: absolute;
+  top: 0; left: 0;
+  width: 18px; height: 18px;
+  background: #2255cc;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Card back label */
+.cardback-label {
+  position: absolute;
+  bottom: 4px; left: 0; right: 0;
+  text-align: center;
+  color: #888;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+/* DON!! wrap */
+.don-wrap {
+  border-radius: 4px;
+  position: relative;
+}
+.don-wrap .card-img {
+  border-radius: 4px;
+}
+.don-wrap.don-rested {
+  /* 横置状态：容器宽高已交换，图片通过绝对定位和旋转实现 */
+}

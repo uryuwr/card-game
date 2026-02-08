@@ -1,0 +1,33 @@
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.player-info.opponent {
+  border-color: rgba(255, 100, 100, 0.2);
+}
+
+.player-avatar {
+  font-size: 1.8rem;
+}
+
+.player-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #ffd700;
+}
+
+.player-stats-bar {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.stat-health { color: #ff6b6b; }
+.stat-mana { color: #74b9ff; }
+.stat-deck { color: #a0a0c0; }

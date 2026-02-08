@@ -1,0 +1,406 @@
+/**
+ * ONE PIECE CARD GAME - Card Styles
+ */
+
+/* ============ Base Card ============ */
+.card {
+  position: relative;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s;
+  user-select: none;
+  flex-shrink: 0;
+  background: linear-gradient(145deg, #1a1a2e, #16213e);
+  border: 2px solid #333;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============ Sizes ============ */
+.card-normal {
+  width: 120px;
+  height: 168px;
+  padding: 6px;
+}
+
+.card-small {
+  width: 80px;
+  height: 112px;
+  padding: 4px;
+  font-size: 0.75rem;
+}
+
+.card-mini {
+  width: 50px;
+  height: 70px;
+  padding: 2px;
+  font-size: 0.6rem;
+}
+
+/* ============ Color Themes ============ */
+.card-color-red {
+  background: linear-gradient(145deg, #4a1a1a, #2a0a0a);
+  border-color: #c41e3a;
+}
+.card-color-red:hover {
+  box-shadow: 0 0 15px rgba(196, 30, 58, 0.6);
+}
+
+.card-color-green {
+  background: linear-gradient(145deg, #1a3a1a, #0a2a0a);
+  border-color: #228b22;
+}
+.card-color-green:hover {
+  box-shadow: 0 0 15px rgba(34, 139, 34, 0.6);
+}
+
+.card-color-blue {
+  background: linear-gradient(145deg, #1a2a4a, #0a1a3a);
+  border-color: #4169e1;
+}
+.card-color-blue:hover {
+  box-shadow: 0 0 15px rgba(65, 105, 225, 0.6);
+}
+
+.card-color-purple {
+  background: linear-gradient(145deg, #3a1a4a, #2a0a3a);
+  border-color: #9370db;
+}
+.card-color-purple:hover {
+  box-shadow: 0 0 15px rgba(147, 112, 219, 0.6);
+}
+
+.card-color-black {
+  background: linear-gradient(145deg, #222, #111);
+  border-color: #555;
+}
+.card-color-black:hover {
+  box-shadow: 0 0 15px rgba(100, 100, 100, 0.6);
+}
+
+.card-color-yellow {
+  background: linear-gradient(145deg, #4a3a1a, #3a2a0a);
+  border-color: #daa520;
+}
+.card-color-yellow:hover {
+  box-shadow: 0 0 15px rgba(218, 165, 32, 0.6);
+}
+
+/* ============ Card Types ============ */
+.card-type-leader {
+  border-width: 3px;
+}
+
+.card-type-character {
+  /* Default character styling - no special rules */
+  border-radius: 8px;
+}
+
+.card-type-event {
+  opacity: 0.95;
+}
+
+.card-type-stage {
+  border-style: dashed;
+}
+
+/* ============ Card States ============ */
+.card-rested {
+  transform: rotate(90deg);
+  opacity: 0.8;
+}
+
+.card-selectable {
+  cursor: pointer;
+}
+.card-selectable:hover {
+  transform: translateY(-10px);
+  z-index: 5;
+}
+
+.card-selected {
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8) !important;
+  border-color: gold !important;
+}
+
+.card-targetable {
+  cursor: crosshair;
+  animation: pulse-target 1s infinite;
+}
+
+@keyframes pulse-target {
+  0%, 100% { box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.8); }
+}
+
+/* ============ Card Back ============ */
+.card-back {
+  background: linear-gradient(145deg, #1a0a0a, #2a1515);
+  border-color: #8b0000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-back::before {
+  content: '🏴‍☠️';
+  font-size: 1.5rem;
+}
+
+.card-back-label {
+  font-size: 0.6rem;
+  color: #888;
+  margin-top: 4px;
+}
+
+.card-back-count {
+  font-weight: bold;
+  color: #fff;
+  font-size: 1.2rem;
+}
+
+/* ============ Card Elements ============ */
+.card-cost {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #4488ff, #2255cc);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: white;
+  border: 2px solid #6699ff;
+  z-index: 2;
+}
+
+.card-small .card-cost {
+  width: 18px;
+  height: 18px;
+  font-size: 0.7rem;
+  top: -2px;
+  left: -2px;
+}
+
+.card-life {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #ff4488, #cc2255);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: white;
+  border: 2px solid #ff6699;
+  z-index: 2;
+}
+
+.card-image {
+  width: 100%;
+  flex: 1;
+  min-height: 50px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.card-image-placeholder {
+  font-size: 1.8rem;
+}
+
+.card-small .card-image-placeholder {
+  font-size: 1.2rem;
+}
+
+.card-mini .card-image-placeholder {
+  font-size: 0.9rem;
+}
+
+.card-name {
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-align: center;
+  color: #ffd700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+}
+
+.card-small .card-name {
+  font-size: 0.6rem;
+}
+
+.card-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.5rem;
+  color: #888;
+  padding: 0 2px;
+}
+
+.card-number {
+  font-family: monospace;
+}
+
+.card-trait {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.card-power {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  background: linear-gradient(135deg, #333, #222);
+  border-radius: 4px;
+  padding: 2px 6px;
+  border: 1px solid #555;
+}
+
+.power-value {
+  color: #fff;
+  font-weight: bold;
+  font-size: 0.75rem;
+}
+
+.card-small .power-value {
+  font-size: 0.65rem;
+}
+
+.card-counter {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: linear-gradient(135deg, #228b22, #166616);
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: white;
+  font-weight: bold;
+  font-size: 0.6rem;
+  border: 1px solid #2a9d2a;
+}
+
+.card-don-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 215, 0, 0.9);
+  color: #000;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  z-index: 3;
+}
+
+.don-count {
+  font-weight: bold;
+}
+
+.card-effect {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.9);
+  color: #aaa;
+  font-size: 0.5rem;
+  padding: 4px;
+  line-height: 1.2;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s;
+}
+
+.card:hover .card-effect {
+  max-height: 60px;
+}
+
+.card-trigger-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.8rem;
+}
+
+/* ============ DON!! Card ============ */
+.don-card {
+  width: 40px;
+  height: 56px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s;
+  font-weight: bold;
+}
+
+.don-active {
+  background: linear-gradient(145deg, #ffd700, #daa520);
+  border: 2px solid #ffec8b;
+  color: #000;
+}
+
+.don-rested {
+  background: linear-gradient(145deg, #8b7500, #6b5500);
+  border: 2px solid #a89000;
+  color: #333;
+  transform: rotate(90deg);
+}
+
+.don-active:hover {
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.don-text {
+  font-size: 0.55rem;
+  line-height: 1;
+}
+
+.don-card .don-count {
+  font-size: 0.7rem;
+  margin-top: 2px;
+}
+
+/* ============ Responsive ============ */
+@media (max-width: 768px) {
+  .card-normal {
+    width: 90px;
+    height: 126px;
+  }
+  
+  .card-small {
+    width: 60px;
+    height: 84px;
+  }
+  
+  .don-card {
+    width: 30px;
+    height: 42px;
+  }
+  
+  .don-text {
+    font-size: 0.45rem;
+  }
+}

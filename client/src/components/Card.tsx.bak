@@ -1,0 +1,218 @@
+/**
+ * ONE PIECE CARD GAME - Card Component
+ * Displays cards with proper OP TCG styling
+ */
+
+import { motion } from 'framer-motion'
+import type { Card, CardSlot } from '../contexts/GameContext'
+import './Card.css'
+
+interface CardProps {
+  card: Card
+  slot?: CardSlot // For field cards with DON!! and state
+  index?: number
+  total?: number
+  size?: 'normal' | 'small' | 'mini'
+  isRested?: boolean
+  attachedDon?: number
+  power?: number
+  selectable?: boolean
+  selected?: boolean
+  targetable?: boolean
+  faceDown?: boolean
+  onClick?: () => void
+  onHover?: () => void
+}
+
+// Color mappings for OP TCG
+const colorStyles: Record<string, string> = {
+  RED: 'card-color-red',
+  GREEN: 'card-color-green',
+  BLUE: 'card-color-blue',
+  PURPLE: 'card-color-purple',
+  BLACK: 'card-color-black',
+  YELLOW: 'card-color-yellow',
+}
+
+const typeStyles: Record<string, string> = {
+  LEADER: 'card-type-leader',
+  CHARACTER: 'card-type-character',
+  EVENT: 'card-type-event',
+  STAGE: 'card-type-stage',
+}
+
+export default function CardComponent({
+  card,
+  slot,
+  index = 0,
+  total = 1,
+  size = 'normal',
+  isRested,
+  attachedDon,
+  power,
+  selectable = false,
+  selected = false,
+  targetable = false,
+  faceDown = false,
+  onClick,
+  onHover,
+}: CardProps) {
+  // Use slot data if provided
+  const actualRested = slot?.state === 'RESTED' || isRested
+  const actualDon = slot?.attachedDon ?? attachedDon ?? 0
+  const actualPower = slot?.power ?? power ?? card.power
+
+  // Fan layout for hand cards
+  const fanAngle = total > 1 ? (index - (total - 1) / 2) * 6 : 0
+  const fanY = total > 1 ? Math.abs(index - (total - 1) / 2) * 5 : 0
+
+  // Image path logic
+  const imagePath = card.imageUrl || `/cards/${card.cardNumber}.png`
+  // Simple error handler could be added to try .jpg if .png fails, but for now we rely on logical paths
+ 
+  // Hidden card (opponent hand)
+  if (card.hidden || faceDown) {
+    return (
+      <motion.div
+        className={`card card-${size} card-back`}
+        style={{
+          rotate: size === 'normal' ? fanAngle : 0,
+          y: size === 'normal' ? fanY : 0,
+          backgroundImage: `url('/cards/card-back.png')`,
+          backgroundSize: 'cover'
+        }}
+        layout
+      />
+    )
+  }
+
+  const cardColor = colorStyles[card.color] || 'card-color-red'
+  const cardType = typeStyles[card.cardType] || 'card-type-character'
+
+  return (
+    <motion.div
+      className={`card card-${size} ${cardColor} ${cardType}
+        ${actualRested ? 'card-rested' : ''} 
+        ${selectable ? 'card-selectable' : ''} 
+        ${selected ? 'card-selected' : ''} 
+        ${targetable ? 'card-targetable' : ''}`}
+      style={{
+        rotate: size === 'normal' && !actualRested ? fanAngle : (actualRested ? 90 : 0),
+        y: size === 'normal' && !actualRested ? fanY : 0,
+        backgroundImage: `url('${imagePath}'), url('/cards/${card.cardNumber}.jpg')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}
+      whileHover={selectable || targetable ? { y: -20, scale: 1.05, zIndex: 10 } : {}}
+      whileTap={onClick ? { scale: 0.95 } : {}}
+      onClick={onClick}
+      onMouseEnter={onHover}
+      layout
+    >
+      {/* Cost Badge (Characters/Events/Stages) */}
+      {card.cost !== null && (
+        <div className="card-cost">{card.cost}</div>
+      )}
+
+      {/* Life Badge (Leaders) */}
+      {card.cardType === 'LEADER' && card.life && (
+        <div className="card-life">{card.life}</div>
+      )}
+
+      {/* Card Image */}
+      <div className="card-image">
+        <div className="card-image-placeholder">
+          {card.cardType === 'LEADER' ? '👑' : 
+           card.cardType === 'CHARACTER' ? '🏴‍☠️' :
+           card.cardType === 'EVENT' ? '⚡' : '🏝️'}
+        </div>
+      </div>
+
+      {/* Card Name */}
+      <div className="card-name">{card.nameCn || card.name}</div>
+
+      {/* Card Number & Trait */}
+      <div className="card-info">
+        <span className="card-number">{card.cardNumber}</span>
+        {card.trait && <span className="card-trait">{card.trait}</span>}
+      </div>
+
+      {/* Power (Leaders & Characters) */}
+      {actualPower !== null && actualPower !== undefined && (
+        <div className="card-power">
+          <span className="power-value">{actualPower}</span>
+        </div>
+      )}
+
+      {/* Counter Value */}
+      {card.counter && (
+        <div className="card-counter">+{card.counter}</div>
+      )}
+
+      {/* DON!! Badge */}
+      {actualDon > 0 && (
+        <div className="card-don-badge">
+          <span className="don-count">DON!! x{actualDon}</span>
+        </div>
+      )}
+
+      {/* Effect Text (on hover/expanded) */}
+      {card.effect && (
+        <div className="card-effect" title={card.effect}>
+          {card.effect.length > 60 ? card.effect.substring(0, 60) + '...' : card.effect}
+        </div>
+      )}
+
+      {/* Trigger Indicator */}
+      {card.trigger && (
+        <div className="card-trigger-badge">⚡</div>
+      )}
+    </motion.div>
+  )
+}
+
+/**
+ * DON!! Card Component
+ */
+interface DonCardProps {
+  active?: boolean
+  count?: number
+  onClick?: () => void
+}
+
+export function DonCard({ active = true, count = 1, onClick }: DonCardProps) {
+  return (
+    <motion.div
+      className={`don-card ${active ? 'don-active' : 'don-rested'}`}
+      whileHover={onClick ? { scale: 1.1 } : {}}
+      whileTap={onClick ? { scale: 0.95 } : {}}
+      onClick={onClick}
+    >
+      <span className="don-text">DON!!</span>
+      {count > 1 && <span className="don-count">x{count}</span>}
+    </motion.div>
+  )
+}
+
+/**
+ * Card Back Component (for deck/life display)
+ */
+interface CardBackProps {
+  count?: number
+  label?: string
+  onClick?: () => void
+}
+
+export function CardBack({ count, label, onClick }: CardBackProps) {
+  return (
+    <motion.div
+      className="card card-small card-back"
+      whileHover={onClick ? { scale: 1.05 } : {}}
+      onClick={onClick}
+    >
+      {label && <span className="card-back-label">{label}</span>}
+      {count !== undefined && <span className="card-back-count">{count}</span>}
+    </motion.div>
+  )
+}
+

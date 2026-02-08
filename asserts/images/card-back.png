@@ -1,0 +1,13 @@
+<!DOCTYPE html><html lang=""><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><link rel="icon" href="/favicon.ico"><title>航海王卡牌对战</title><link href="/static/css/app.4ee733a5.css" rel="preload" as="style"><link href="/static/css/chunk-vendors.7cbdb86f.css" rel="preload" as="style"><link href="/static/js/app.45a653f5.js" rel="preload" as="script"><link href="/static/js/chunk-vendors.ae48380a.js" rel="preload" as="script"><link href="/static/css/chunk-vendors.7cbdb86f.css" rel="stylesheet"><link href="/static/css/app.4ee733a5.css" rel="stylesheet"></head><body><noscript><strong>We're sorry but one-piece-response doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="app"></div><script src="/static/js/chunk-vendors.ae48380a.js"></script><script src="/static/js/app.45a653f5.js"></script></body><script charset="utf-8" src="https://g.alicdn.com/apsara-media-box/imp-web-player/2.25.1/aliplayer-min.js"></script><script charset="utf-8" src="https://player.alicdn.com/aliplayer/presentation/js/aliplayercomponents.min.js"></script><link rel="stylesheet" href="https://g.alicdn.com/apsara-media-box/imp-web-player/2.25.1/skins/default/aliplayer-min.css"><script>var _hmt = _hmt || [];
+    
+    (function() {
+    
+      var hm = document.createElement("script");
+    
+      hm.src = "https://hm.baidu.com/hm.js?55d056b4f556c9cce8f576686be7ce50";
+    
+      var s = document.getElementsByTagName("script")[0]; 
+    
+      s.parentNode.insertBefore(hm, s);
+    
+    })();</script></html>
