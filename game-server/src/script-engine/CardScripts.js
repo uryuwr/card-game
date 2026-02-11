@@ -157,4 +157,48 @@ export const CARD_SCRIPTS = {
       },
     ],
   },
+
+  /**
+   * OP01-029 离子光波 (Diable Jambe / Ion Cannon)
+   * COUNTER: 选择己方1张领袖或角色，本回合力量+2000，若生命<=2则再+2000
+   * 费用: 1 DON
+   */
+  'OP01-029': {
+    triggerType: 'COUNTER',
+    cost: 1,
+    conditions: [],
+    actions: [
+      {
+        type: 'PENDING_SELECT_TARGET',
+        targetScope: 'player',           // 只能选己方
+        targetTypes: ['leader', 'character'],  // 领袖或角色
+        maxSelect: 1,
+        message: '选择己方1张领袖或角色，本回合力量+2000',
+        onSelect: [
+          // 基础效果: +2000
+          {
+            type: 'MODIFY_POWER',
+            target: 'SELECTED',
+            amount: 2000,
+          },
+          // 条件效果: 若生命<=2再+2000
+          {
+            type: 'CONDITIONAL_ACTION',
+            condition: { type: 'CHECK_LIFE', operator: '<=', amount: 2 },
+            actions: [
+              {
+                type: 'MODIFY_POWER',
+                target: 'SELECTED',
+                amount: 2000,
+              },
+              {
+                type: 'LOG',
+                message: '生命<=2，额外+2000!',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 }

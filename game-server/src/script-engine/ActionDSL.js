@@ -19,6 +19,33 @@ export class ActionDSL {
   // =====================
 
   /**
+   * 检查是否有足够的 DON 支付费用
+   * @param {number} cost - 需要的费用
+   * @returns {boolean}
+   */
+  canPayCost(cost) {
+    return this.context.getCurrentPlayer().donActive >= cost
+  }
+
+  /**
+   * 支付 DON 费用 (从活跃变为休息)
+   * @param {number} cost - 需要的费用
+   * @returns {boolean} 是否支付成功
+   */
+  payCost(cost) {
+    const player = this.context.getCurrentPlayer()
+    if (player.donActive < cost) {
+      this.context.log(`费用不足: 需要 ${cost} DON (当前 ${player.donActive})`)
+      return false
+    }
+    
+    player.donActive -= cost
+    player.donRested += cost
+    this.context.log(`支付 ${cost} DON`)
+    return true
+  }
+
+  /**
    * 给目标贴 DON
    * @param {string} targetInstanceId - 目标卡牌实例ID
    * @param {number} count - DON 数量
@@ -67,29 +94,96 @@ export class ActionDSL {
    * @param {string} targetPlayerId - 目标所属玩家 (默认己方)
    */
   modifyPower(targetInstanceId, amount, targetPlayerId = null) {
-    const targetPlayer = targetPlayerId
-      ? this.context.engine.players.find(p => p.id === targetPlayerId)
+    const engine = this.context.engine
+    const pendingAttack = engine.pendingAttack
+
+    // 查找目标所属的玩家
+    let targetPlayer = targetPlayerId
+      ? engine.players.find(p => p.id === targetPlayerId)
       : this.context.getCurrentPlayer()
 
-    if (!targetPlayer) return false
+    // 辅助函数：检查是否是战斗目标
+    const isBattleTarget = (instanceId) => {
+      if (!pendingAttack) return false
+      // 支持 targetId='leader' 或 targetInstanceId 匹配
+      return pendingAttack.targetId === instanceId || 
+             pendingAttack.targetInstanceId === instanceId
+    }
+    
+    // 辅助函数：追踪力量修改（用于撤销）
+    const trackPowerMod = (targetId, amt) => {
+      if (engine._trackingPowerMods) {
+        engine._trackingPowerMods.push({ targetId, amount: amt })
+      }
+    }
 
-    // 支持 leader
+    // 如果 target 是 'leader' 字符串，用当前玩家的领袖
     if (targetInstanceId === 'leader') {
+      if (!targetPlayer) return false
+      const leaderInstanceId = targetPlayer.leader.card.instanceId
       targetPlayer.powerMods = targetPlayer.powerMods || new Map()
-      const current = targetPlayer.powerMods.get(targetPlayer.leader.card.instanceId) || 0
-      targetPlayer.powerMods.set(targetPlayer.leader.card.instanceId, current + amount)
+      const current = targetPlayer.powerMods.get(leaderInstanceId) || 0
+      targetPlayer.powerMods.set(leaderInstanceId, current + amount)
+      trackPowerMod(leaderInstanceId, amount)
       this.context.log(`领袖力量 ${amount > 0 ? '+' : ''}${amount}`)
+      
+      // 如果正在战斗中，且修改的目标就是被攻击的单位，更新 targetPower
+      if (isBattleTarget(leaderInstanceId) || isBattleTarget('leader')) {
+        pendingAttack.targetPower += amount
+        engine.pendingCounterPower += amount
+        this.context.log(`(战斗力量更新: ${pendingAttack.targetPower})`)
+      }
       return true
     }
 
+    // 检查 targetInstanceId 是否是某个玩家的领袖
+    for (const player of engine.players) {
+      if (player.leader.card.instanceId === targetInstanceId) {
+        player.powerMods = player.powerMods || new Map()
+        const current = player.powerMods.get(targetInstanceId) || 0
+        player.powerMods.set(targetInstanceId, current + amount)
+        trackPowerMod(targetInstanceId, amount)
+        this.context.log(`${player.leader.card.nameCn || player.leader.card.name} 力量 ${amount > 0 ? '+' : ''}${amount}`)
+        
+        // 如果正在战斗中，且修改的目标就是被攻击的单位，更新 targetPower
+        if (isBattleTarget(targetInstanceId) || isBattleTarget('leader')) {
+          pendingAttack.targetPower += amount
+          engine.pendingCounterPower += amount
+          this.context.log(`(战斗力量更新: ${pendingAttack.targetPower})`)
+        }
+        return true
+      }
+    }
+
+    // 否则查找角色
+    if (!targetPlayer) return false
+    
     const slot = this.context.findCharacterSlot(targetInstanceId, targetPlayer)
-    if (!slot) return false
+    if (!slot) {
+      // 尝试在对手那边找
+      const opponent = this.context.getOpponent()
+      const opponentSlot = this.context.findCharacterSlot(targetInstanceId, opponent)
+      if (opponentSlot) {
+        targetPlayer = opponent
+      } else {
+        return false
+      }
+    }
 
     targetPlayer.powerMods = targetPlayer.powerMods || new Map()
     const current = targetPlayer.powerMods.get(targetInstanceId) || 0
     targetPlayer.powerMods.set(targetInstanceId, current + amount)
+    trackPowerMod(targetInstanceId, amount)
 
-    this.context.log(`${slot.card.nameCn || slot.card.name} 力量 ${amount > 0 ? '+' : ''}${amount}`)
+    const finalSlot = this.context.findCharacterSlot(targetInstanceId, targetPlayer)
+    this.context.log(`${finalSlot.card.nameCn || finalSlot.card.name} 力量 ${amount > 0 ? '+' : ''}${amount}`)
+    
+    // 如果正在战斗中，且修改的目标就是被攻击的单位，更新 targetPower
+    if (isBattleTarget(targetInstanceId)) {
+      pendingAttack.targetPower += amount
+      engine.pendingCounterPower += amount
+      this.context.log(`(战斗力量更新: ${pendingAttack.targetPower})`)
+    }
     return true
   }
 

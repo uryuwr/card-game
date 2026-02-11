@@ -165,6 +165,20 @@ export class ScriptEngine {
   }
 
   /**
+   * 检查卡牌是否有指定触发类型的脚本
+   * @param {string} cardNumber - 卡牌编号
+   * @param {string} triggerType - 触发类型
+   * @returns {boolean}
+   */
+  hasScript(cardNumber, triggerType) {
+    const scriptDef = CARD_SCRIPTS[cardNumber]
+    if (!scriptDef) return false
+    
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+    return triggers.some(t => t.triggerType === triggerType)
+  }
+
+  /**
    * 判断是否应该执行此脚本
    */
   _shouldExecute(triggerType, entry, triggerInfo) {
@@ -191,6 +205,10 @@ export class ScriptEngine {
 
       case TRIGGER_TYPES.ACTIVATE_MAIN:
         // ACTIVATE_MAIN 只执行指定卡的脚本
+        return entry.instanceId === triggerInfo.sourceCard?.instanceId
+
+      case TRIGGER_TYPES.COUNTER:
+        // COUNTER 只执行使用的Counter卡的脚本
         return entry.instanceId === triggerInfo.sourceCard?.instanceId
 
       default:
@@ -378,6 +396,36 @@ export class ScriptEngine {
         return { needsInteraction: true, type: 'SEARCH' }
       }
 
+      case 'PENDING_SELECT_TARGET': {
+        // 等待玩家选择目标 (用于Buff/Debuff/KO等)
+        const validTargets = this._collectValidTargets(action, context)
+        
+        this.engine.pendingEffect = {
+          type: 'SELECT_TARGET',
+          validTargets,
+          maxSelect: action.maxSelect || 1,
+          message: action.message,
+          onSelectActions: action.onSelect || [],  // 选中后要执行的动作
+          playerId: context.getCurrentPlayer().id,
+          sourceCardNumber: context.sourceCard.cardNumber,
+          sourceCardName: context.sourceCard.nameCn || context.sourceCard.name,
+        }
+        
+        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'SELECT_TARGET' }
+      }
+
+      case 'CONDITIONAL_ACTION': {
+        // 条件满足时执行子动作
+        if (this._evaluateCondition(action.condition, context, triggerInfo)) {
+          for (const subAction of action.actions || []) {
+            this._executeAction(subAction, context, actions, triggerInfo)
+          }
+          return true
+        }
+        return false
+      }
+
       case 'LOG': {
         context.log(action.message)
         return true
@@ -404,10 +452,98 @@ export class ScriptEngine {
         return triggerInfo.extra?.attackerId
       case 'TARGET':
         return triggerInfo.extra?.targetId
+      case 'SELECTED':
+        // 引用刚被选中的目标
+        return context.selectedTargets?.[0]
+      case 'BATTLE_TARGET':
+        // 战斗中被攻击的目标
+        return this.engine.pendingAttack?.targetId
       default:
         // 直接返回 instanceId
         return target
     }
+  }
+
+  /**
+   * 收集有效的选择目标
+   */
+  _collectValidTargets(action, context) {
+    const targets = []
+    const player = context.getCurrentPlayer()
+    const opponent = context.getOpponent()
+    const scope = action.targetScope || 'player'  // 'player' | 'opponent' | 'both'
+    const types = action.targetTypes || ['character']  // ['leader', 'character']
+
+    const collectFromPlayer = (p, isOwn) => {
+      // 领袖
+      if (types.includes('leader')) {
+        targets.push({
+          instanceId: p.leader.card.instanceId,
+          type: 'leader',
+          playerId: p.id,
+          isOwn,
+          card: this.engine._sanitizeCard(p.leader.card),
+        })
+      }
+      // 角色
+      if (types.includes('character')) {
+        for (const slot of p.characters) {
+          targets.push({
+            instanceId: slot.card.instanceId,
+            type: 'character',
+            playerId: p.id,
+            isOwn,
+            card: this.engine._sanitizeCard(slot.card),
+          })
+        }
+      }
+    }
+
+    if (scope === 'player' || scope === 'both') {
+      collectFromPlayer(player, true)
+    }
+    if (scope === 'opponent' || scope === 'both') {
+      collectFromPlayer(opponent, false)
+    }
+
+    return targets
+  }
+
+  /**
+   * 执行目标选择后的动作序列
+   * @param {string[]} selectedInstanceIds - 被选中的目标实例ID数组
+   * @param {object} pendingEffect - 待决效果信息
+   */
+  executeOnSelectActions(selectedInstanceIds, pendingEffect) {
+    if (!pendingEffect?.onSelectActions?.length) return []
+
+    // 找到触发卡牌的玩家
+    const player = this.engine.players.find(p => p.id === pendingEffect.playerId)
+    const opponent = this.engine.players.find(p => p.id !== pendingEffect.playerId)
+
+    // 重建 context，加入选中的目标
+    const context = new ScriptContext(this.engine, {
+      triggerType: 'COUNTER',
+      sourceCard: { 
+        cardNumber: pendingEffect.sourceCardNumber, 
+        nameCn: pendingEffect.sourceCardName,
+        name: pendingEffect.sourceCardName,
+      },
+      sourceSlot: null,
+      player,
+      opponent,
+    })
+    context.selectedTargets = selectedInstanceIds
+
+    const actions = new ActionDSL(context)
+    const results = []
+
+    for (const action of pendingEffect.onSelectActions) {
+      const result = this._executeAction(action, context, actions, {})
+      results.push(result)
+    }
+
+    return results
   }
 
   /** 清理所有状态 */

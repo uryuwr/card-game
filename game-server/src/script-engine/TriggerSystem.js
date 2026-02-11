@@ -12,6 +12,7 @@ export const TRIGGER_TYPES = {
   TURN_END: 'TURN_END',
   ACTIVATE_MAIN: 'ACTIVATE_MAIN',
   CONSTANT: 'CONSTANT',
+  COUNTER: 'COUNTER',  // 反击阶段使用事件卡
 }
 
 export class TriggerSystem {

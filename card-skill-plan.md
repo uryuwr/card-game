@@ -43,7 +43,7 @@
 | **ST21-003** | **山智** | `ON_PLAY` | **效果**: 选1 Power>=6000 [Straw Hat] 本回合无视阻挡<br>**自动化**: `checkFilter(>=6000)` -> `addState('ignoreBlocker')` | 🖱️ 选目标 | 🔄 待实现 |
 | **ST01-016** | **恶魔风脚** (Event) | `ACTIVATE_MAIN` | **效果**: 选1 [Straw Hat] 本回合无视阻挡<br>**自动化**: 选目标 -> `addState('ignoreBlocker')` | 🖱️ 选目标 | 🔄 待实现 |
 | **OP01-026** | **橡皮火拳枪** (Event) | `COUNTER` | **效果**: +4000 并 KO对手<=4000<br>**自动化**: `modifyPower` -> KO Filter(<=4000) | 🖱️ 选目标 | 🔄 待实现 |
-| **OP01-029** | **离子光波** (Event) | `COUNTER` | **效果**: +2000, 若生命<=2再+2000<br>**自动化**: `checkLife` -> `modifyPower` | 🖱️ 选目标  | 🔄 待实现 |
+| **OP01-029** | **离子光波** (Event) | `COUNTER` | **效果**: +2000, 若生命<=2再+2000<br>**自动化**: `PENDING_SELECT_TARGET` -> `checkLife` -> `modifyPower` | 🖱️ 选目标  | ✅ 已支持 |
 | **ST01-014** | **毛皮强化** (Event) | `COUNTER` | **效果**: +3000<br>**实现**: 原生 Counter 逻辑 | 🖱️ 选目标 | 🔄 待实现 |
 
 ### ⚪ 白胡子海盗团 (Whitebeard Pirates) - 红色控制/坦克

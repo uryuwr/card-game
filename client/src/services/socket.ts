@@ -253,6 +253,31 @@ class SocketService {
     this.socket?.emit('game:resolve-search', { selectedIds, bottomIds })
   }
 
+  /** Use a counter card with script effect (e.g., OP01-029) - legacy, now internally stages + confirms */
+  useCounterCard(cardInstanceId: string) {
+    this.socket?.emit('game:use-counter-card', { cardInstanceId })
+  }
+
+  /** Stage a counter card (can be unstaged/cancelled before confirming) */
+  stageCounterCard(cardInstanceId: string) {
+    this.socket?.emit('game:stage-counter-card', { cardInstanceId })
+  }
+
+  /** Unstage (cancel) a previously staged counter card */
+  unstageCounterCard(cardInstanceId: string) {
+    this.socket?.emit('game:unstage-counter-card', { cardInstanceId })
+  }
+
+  /** Confirm all staged counter cards (move to trash and resolve battle) */
+  confirmCounter() {
+    this.socket?.emit('game:confirm-counter')
+  }
+
+  /** Submit target selection result */
+  selectTargetResult(selectedInstanceIds: string[]) {
+    this.socket?.emit('game:select-target-result', { selectedInstanceIds })
+  }
+
   /** Take a Life card and add to hand */
   lifeToHand(lifeIndex: number = 0) {
     this.socket?.emit('game:life-to-hand', { lifeIndex })

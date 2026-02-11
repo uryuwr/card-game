@@ -546,6 +546,10 @@
   font-size: 12px;
   margin: 6px 0 10px;
 }
+.counter-accumulated {
+  color: #4ADE80;
+  font-weight: 600;
+}
 .counter-card-list {
   display: flex;
   flex-wrap: wrap;
@@ -567,8 +571,84 @@
   background: rgba(74,222,128,0.15);
   color: #c8f5d6;
 }
-.counter-card-btn:hover {
+.counter-card-btn.scripted {
+  border-color: #26C6DA;
+  background: rgba(38,198,218,0.12);
+  color: #B2EBF2;
+}
+.counter-card-btn.scripted:hover {
+  background: rgba(38,198,218,0.25);
+}
+.counter-card-btn:hover:not(:disabled) {
   background: #252532;
+}
+.counter-card-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Used Counter Cards Display */
+.used-counter-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: rgba(74, 222, 128, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+.used-counter-cards .used-label {
+  color: #888;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.used-counter-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  border-radius: 4px;
+  font-size: 11px;
+  color: #c8f5d6;
+}
+.used-counter-card.unstage-able {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.used-counter-card.unstage-able:hover {
+  background: rgba(239, 83, 80, 0.25);
+  border-color: rgba(239, 83, 80, 0.6);
+  color: #ffa0a0;
+}
+.used-counter-card .unstage-hint {
+  font-size: 10px;
+  color: #888;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  margin-left: 2px;
+}
+.used-counter-card.unstage-able:hover .unstage-hint {
+  opacity: 1;
+  color: #ef5350;
+}
+.used-counter-card .expiry-tag {
+  font-size: 9px;
+  color: #999;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 2px;
+}
+
+.counter-hint {
+  color: #888;
+  font-size: 12px;
+  margin: 8px 0 4px;
 }
 
 /* ============ BATTLE INFO OVERLAY ============ */

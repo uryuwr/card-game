@@ -142,6 +142,14 @@ export const SOCKET_EVENTS = {
   SET_EFFECT_RESTRICTION: 'game:set-effect-restriction',
   RESOLVE_EFFECT: 'game:resolve-effect',
   SKIP_EFFECT: 'game:skip-effect',
+  
+  // Counter / Target Selection (Staging model)
+  STAGE_COUNTER_CARD: 'game:stage-counter-card',    // 暂存反击卡（可撤销）
+  UNSTAGE_COUNTER_CARD: 'game:unstage-counter-card', // 撤销暂存的反击卡
+  CONFIRM_COUNTER: 'game:confirm-counter',           // 确认反击（将暂存卡移入弃牌区）
+  USE_COUNTER_CARD: 'game:use-counter-card',         // 保留兼容旧版
+  SELECT_TARGET_PROMPT: 'game:select-target-prompt',
+  SELECT_TARGET_RESULT: 'game:select-target-result',
 
   // System
   ERROR: 'error',

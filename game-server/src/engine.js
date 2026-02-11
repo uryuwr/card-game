@@ -29,6 +29,8 @@ export class GameEngine {
     this.battleStep = BATTLE_STEPS.NONE
     this.pendingAttack = null
     this.pendingCounterPower = 0
+    this.stagedCounterCards = []    // 暂存的反击卡（可撤销）
+    this.activeEffects = []         // 当前生效中的效果（带过期条件）
     this.pendingEffect = null
     this.winner = null
     this.actionLog = []
@@ -304,11 +306,18 @@ export class GameEngine {
   }
 
   _nextTurn() {
+    // 清理"本回合"过期的效果
+    this._expireEffects('END_OF_TURN')
+    
     this.currentTurnIndex = 1 - this.currentTurnIndex
     this.turnNumber++
     this.pendingAttack = null
     this.battleStep = BATTLE_STEPS.NONE
     this.pendingCounterPower = 0
+    this.stagedCounterCards = []
+    
+    // 清理"对手回合开始时"过期的效果
+    this._expireEffects('OPPONENT_START')
 
     const isFirst = this.turnNumber === 2 && this.currentTurnIndex === 1 - (this.turnNumber % 2)
     
@@ -426,6 +435,130 @@ export class GameEngine {
     this._log(`${player.name} plays Event: ${card.nameCn || card.name} -> Effect: Execute manually`)
     
     return { success: true, cardPlayed: card, effectText: card.effect }
+  }
+
+  /**
+   * Use a Counter card from hand during battle
+   * @param {string} socketId - Player socket ID
+   * @param {string} cardInstanceId - Counter card instance ID
+   */
+  useCounterCard(socketId, cardInstanceId) {
+    const player = this._getPlayer(socketId)
+    
+    // 1. 校验：必须在战斗阶段的Counter步骤 (被攻击方使用)
+    if (this.battleStep !== 'counter') {
+      return { success: false, message: 'Not in counter step' }
+    }
+    
+    // 必须是被攻击方才能使用Counter
+    const attackerId = this.pendingAttack?.attackerPlayerId
+    if (player.id === attackerId) {
+      return { success: false, message: 'Attacker cannot use counter cards' }
+    }
+    
+    // 2. 获取卡牌
+    const cardIndex = player.hand.findIndex(c => c.instanceId === cardInstanceId)
+    if (cardIndex === -1) {
+      return { success: false, message: 'Card not in hand' }
+    }
+    
+    const card = player.hand[cardIndex]
+    if (card.cardType !== CARD_TYPES.EVENT) {
+      return { success: false, message: 'Not an event card' }
+    }
+    
+    // 3. 检查费用
+    const cost = card.cost || 0
+    if (player.donActive < cost) {
+      return { success: false, message: `需要 ${cost} DON (当前 ${player.donActive})` }
+    }
+    
+    // 4. 支付费用
+    player.donActive -= cost
+    player.donRested += cost
+    
+    // 5. 移入墓地
+    player.hand.splice(cardIndex, 1)
+    player.trash.push(card)
+    
+    this._log(`${player.name} 使用 Counter: ${card.nameCn || card.name}`)
+    
+    // 6. 临时注册卡牌脚本并触发 COUNTER
+    this.scriptEngine.registerCard(card, card.instanceId, player.id)
+    
+    const opponent = this._getOpponent(socketId)
+    const results = this.scriptEngine.executeTrigger('COUNTER', {
+      sourceCard: card,
+      player,
+      opponent,
+      extra: {
+        battleTarget: this.pendingAttack?.targetId,
+      },
+    })
+    
+    // 注销脚本
+    this.scriptEngine.unregisterCard(card.instanceId)
+    
+    // 7. 检查是否需要玩家交互 (选择目标)
+    if (this.pendingEffect?.type === 'SELECT_TARGET') {
+      return { 
+        success: true, 
+        needsInteraction: true, 
+        interactionType: 'SELECT_TARGET',
+        validTargets: this.pendingEffect.validTargets,
+        message: this.pendingEffect.message,
+        maxSelect: this.pendingEffect.maxSelect,
+        sourceCardName: this.pendingEffect.sourceCardName,
+        cardUsed: card,
+      }
+    }
+    
+    return { success: true, cardUsed: card }
+  }
+
+  /**
+   * Resolve target selection for pending effects
+   * @param {string} socketId - Player socket ID
+   * @param {string[]} selectedInstanceIds - Selected target instance IDs
+   */
+  resolveSelectTarget(socketId, selectedInstanceIds) {
+    const player = this._getPlayer(socketId)
+    const effect = this.pendingEffect
+    
+    if (!effect || effect.type !== 'SELECT_TARGET') {
+      return { success: false, message: 'No pending selection' }
+    }
+    
+    if (effect.playerId !== player.id) {
+      return { success: false, message: 'Not your pending effect' }
+    }
+    
+    // 验证选择数量
+    if (selectedInstanceIds.length > (effect.maxSelect || 1)) {
+      return { success: false, message: `最多选择 ${effect.maxSelect || 1} 个目标` }
+    }
+    
+    // 验证选择是否有效
+    const validIds = effect.validTargets.map(t => t.instanceId)
+    for (const id of selectedInstanceIds) {
+      if (!validIds.includes(id)) {
+        return { success: false, message: '无效的选择目标' }
+      }
+    }
+    
+    // 执行 onSelectActions（效果会直接更新 pendingAttack.targetPower）
+    const results = this.scriptEngine.executeOnSelectActions(selectedInstanceIds, effect)
+    
+    this._log(`${player.name} 选择了 ${selectedInstanceIds.length} 个目标执行效果`)
+    
+    // 清除待决效果
+    this.pendingEffect = null
+    
+    return { 
+      success: true, 
+      results,
+      newTargetPower: this.pendingAttack?.targetPower,
+    }
   }
 
   /**
@@ -767,65 +900,267 @@ export class GameEngine {
   }
 
   /**
-   * Play counter cards (defender response)
+   * 暂存一张Counter卡（预选模式）
+   * 效果立即生效，但卡牌不进墓地，可以撤销
    */
-  playCounter(socketId, cardInstanceIds, manualPower = 0) {
+  stageCounterCard(socketId, cardInstanceId) {
     const player = this._getPlayer(socketId)
     
     if (!player || !this.pendingAttack || this.battleStep !== BATTLE_STEPS.COUNTER) {
-      return { success: false, message: 'Cannot play counter now' }
+      return { success: false, message: 'Cannot stage counter now' }
     }
     if (this._isCurrentTurn(socketId)) {
-      return { success: false, message: 'Attacker cannot play counter' }
+      return { success: false, message: 'Attacker cannot stage counter' }
     }
 
-    let totalCounterPower = 0
-    const cardsUsed = []
-    let totalDonCost = 0
+    // 检查是否已经暂存
+    if (this.stagedCounterCards.some(sc => sc.card.instanceId === cardInstanceId)) {
+      return { success: false, message: 'Card already staged' }
+    }
 
-    for (const instanceId of cardInstanceIds) {
-      const cardIndex = player.hand.findIndex(c => c.instanceId === instanceId)
-      if (cardIndex === -1) continue
-
-      const card = player.hand[cardIndex]
-      // 事件卡作为反击出牌时，需要消耗活跃DON
-      if (card.cardType === CARD_TYPES.EVENT) {
-        const cost = card.cost || 0
-        if (player.donActive < totalDonCost + cost) {
-          return { success: false, message: `DON!!不足: 需要 ${totalDonCost + cost}, 当前 ${player.donActive}` }
-        }
-        totalDonCost += cost
+    // 1. 查找卡牌
+    const cardIndex = player.hand.findIndex(c => c.instanceId === cardInstanceId)
+    if (cardIndex === -1) {
+      return { success: false, message: 'Card not in hand' }
+    }
+    
+    const card = player.hand[cardIndex]
+    let donCostPaid = 0
+    
+    // 2. 检查并扣除DON费用（事件卡需要消耗DON）
+    if (card.cardType === CARD_TYPES.EVENT) {
+      const cost = card.cost || 0
+      if (player.donActive < cost) {
+        return { success: false, message: `DON!!不足: 需要 ${cost}, 当前 ${player.donActive}` }
       }
+      // 扣费
+      player.donActive -= cost
+      player.donRested += cost
+      donCostPaid = cost
+      if (cost > 0) {
+        this._log(`${player.name} 支付 ${cost} DON!!`)
+      }
+    }
+    
+    // 3. 检查是否有COUNTER脚本
+    const hasScript = this.scriptEngine.hasScript(card.cardNumber, 'COUNTER')
+    
+    // 创建暂存记录
+    const stagedEntry = {
+      card: this._sanitizeCard(card),
+      counterValue: 0,
+      donCostPaid: donCostPaid,
+      powerModsApplied: [], // 记录脚本产生的力量修改
+      effectType: hasScript ? 'SCRIPT_EFFECT' : 'COUNTER_VALUE',
+      expiry: 'END_OF_BATTLE',
+    }
+    
+    if (!hasScript) {
+      // 普通卡：累加counter值
       const counterValue = card.counter || 0
-      totalCounterPower += counterValue
-      player.hand.splice(cardIndex, 1)
-      player.trash.push(card)
-      cardsUsed.push(card)
+      stagedEntry.counterValue = counterValue
+      this.pendingCounterPower += counterValue
+      this.pendingAttack.targetPower += counterValue
+      this._log(`${card.nameCn || card.name}: Counter +${counterValue}`)
+      
+      this.stagedCounterCards.push(stagedEntry)
+      
+      return { 
+        success: true, 
+        cardStaged: card,
+        counterAdded: counterValue,
+        totalCounterPower: this.pendingCounterPower,
+        newTargetPower: this.pendingAttack.targetPower,
+        stagedCounterCards: this.stagedCounterCards,
+      }
     }
-
-    // 扣除事件卡的DON费用
-    if (totalDonCost > 0) {
-      player.donActive -= totalDonCost
-      player.donRested += totalDonCost
-      this._log(`Defender pays ${totalDonCost} DON!! for counter event cards`)
+    
+    // 4. 脚本卡：执行脚本，但需要追踪效果以便撤销
+    this._log(`${card.nameCn || card.name}: 执行Counter效果`)
+    
+    const opponent = this._getOpponent(socketId)
+    
+    // 记录执行脚本前的 pendingCounterPower
+    const powerBefore = this.pendingCounterPower
+    
+    // 设置追踪器，记录脚本产生的 powerMods
+    this._trackingPowerMods = []
+    
+    // 临时注册并执行脚本
+    this.scriptEngine.registerCard(card, card.instanceId, player.id)
+    
+    this.scriptEngine.executeTrigger('COUNTER', {
+      sourceCard: card,
+      player,
+      opponent,
+      extra: {
+        battleTarget: this.pendingAttack?.targetId,
+      },
+    })
+    
+    // 注销脚本
+    this.scriptEngine.unregisterCard(card.instanceId)
+    
+    // 记录脚本产生的力量修改
+    stagedEntry.powerModsApplied = this._trackingPowerMods || []
+    stagedEntry.counterValue = this.pendingCounterPower - powerBefore
+    this._trackingPowerMods = null
+    
+    this.stagedCounterCards.push(stagedEntry)
+    
+    // 5. 检查是否需要玩家交互
+    if (this.pendingEffect?.type === 'SELECT_TARGET') {
+      return { 
+        success: true, 
+        needsInteraction: true, 
+        interactionType: 'SELECT_TARGET',
+        validTargets: this.pendingEffect.validTargets,
+        message: this.pendingEffect.message,
+        maxSelect: this.pendingEffect.maxSelect,
+        sourceCardName: card.nameCn || card.name,
+        cardStaged: card,
+        stagedCounterCards: this.stagedCounterCards,
+      }
     }
-
-    const appliedPower = totalCounterPower + Math.max(0, manualPower || 0)
-    this.pendingCounterPower += appliedPower
-    this.pendingAttack.targetPower += appliedPower
-
-    this._log(`Defender uses Counter cards: +${appliedPower} power`)
-
+    
+    // 脚本不需要交互，直接返回
     return { 
       success: true, 
-      counterPower: appliedPower, 
-      cardsUsed,
-      newTargetPower: this.pendingAttack.targetPower 
+      cardStaged: card,
+      totalCounterPower: this.pendingCounterPower,
+      newTargetPower: this.pendingAttack?.targetPower,
+      stagedCounterCards: this.stagedCounterCards,
     }
   }
 
   /**
-   * Skip counter, resolve battle
+   * 取消暂存的反击卡（撤销效果）
+   */
+  unstageCounterCard(socketId, cardInstanceId) {
+    const player = this._getPlayer(socketId)
+    
+    if (!player || !this.pendingAttack || this.battleStep !== BATTLE_STEPS.COUNTER) {
+      return { success: false, message: 'Cannot unstage counter now' }
+    }
+    if (this._isCurrentTurn(socketId)) {
+      return { success: false, message: 'Attacker cannot unstage counter' }
+    }
+
+    // 查找暂存的卡
+    const stagedIndex = this.stagedCounterCards.findIndex(
+      sc => sc.card.instanceId === cardInstanceId
+    )
+    if (stagedIndex === -1) {
+      return { success: false, message: 'Card not staged' }
+    }
+
+    const staged = this.stagedCounterCards[stagedIndex]
+    
+    // 1. 撤销力量修改
+    this.pendingCounterPower -= staged.counterValue
+    this.pendingAttack.targetPower -= staged.counterValue
+    
+    // 2. 撤销脚本效果带来的powerMods
+    if (staged.powerModsApplied && staged.powerModsApplied.length > 0) {
+      for (const mod of staged.powerModsApplied) {
+        for (const p of this.players) {
+          if (p.powerMods?.has(mod.targetId)) {
+            const current = p.powerMods.get(mod.targetId) || 0
+            p.powerMods.set(mod.targetId, current - mod.amount)
+          }
+        }
+        // 也要撤销对 pendingAttack.targetPower 的修改
+        if (this.pendingAttack.targetId === mod.targetId || 
+            this.pendingAttack.targetInstanceId === mod.targetId) {
+          this.pendingAttack.targetPower -= mod.amount
+          this.pendingCounterPower -= mod.amount
+        }
+      }
+    }
+    
+    // 3. 退还DON费用
+    if (staged.donCostPaid > 0) {
+      player.donActive += staged.donCostPaid
+      player.donRested -= staged.donCostPaid
+    }
+    
+    // 4. 标记卡牌为未暂存（从暂存列表移除）
+    this.stagedCounterCards.splice(stagedIndex, 1)
+    
+    this._log(`取消使用 ${staged.card.nameCn || staged.card.name}`)
+    
+    return {
+      success: true,
+      unstagedCard: staged.card,
+      totalCounterPower: this.pendingCounterPower,
+      newTargetPower: this.pendingAttack.targetPower,
+      stagedCounterCards: this.stagedCounterCards,
+    }
+  }
+
+  /**
+   * 确认反击（将暂存卡移入墓地）
+   */
+  confirmCounter(socketId) {
+    if (!this.pendingAttack || this.battleStep !== BATTLE_STEPS.COUNTER) {
+      return { success: false, message: 'Cannot confirm counter now' }
+    }
+    if (this._isCurrentTurn(socketId)) {
+      return { success: false, message: 'Attacker cannot confirm counter' }
+    }
+
+    const player = this._getPlayer(socketId)
+    
+    // 将所有暂存的卡移入墓地
+    for (const staged of this.stagedCounterCards) {
+      const cardIndex = player.hand.findIndex(c => c.instanceId === staged.card.instanceId)
+      if (cardIndex !== -1) {
+        const [card] = player.hand.splice(cardIndex, 1)
+        player.trash.push(card)
+      }
+    }
+    
+    const usedCount = this.stagedCounterCards.length
+    this._log(`确认反击，使用了 ${usedCount} 张卡`)
+    
+    // 清空暂存列表（保留记录用于显示）
+    const confirmedCards = [...this.stagedCounterCards]
+    this.stagedCounterCards = []
+    
+    // 解决战斗
+    return this._resolveBattle(confirmedCards)
+  }
+
+  /**
+   * 添加手动反击力量（不使用卡牌）
+   */
+  addManualCounterPower(socketId, power) {
+    const player = this._getPlayer(socketId)
+    
+    if (!player || !this.pendingAttack || this.battleStep !== BATTLE_STEPS.COUNTER) {
+      return { success: false, message: 'Cannot add counter power now' }
+    }
+    if (this._isCurrentTurn(socketId)) {
+      return { success: false, message: 'Attacker cannot add counter power' }
+    }
+    
+    const amount = Math.max(0, power || 0)
+    this.pendingCounterPower += amount
+    this.pendingAttack.targetPower += amount
+    
+    this._log(`手动添加反击力量: +${amount}`)
+    
+    return {
+      success: true,
+      powerAdded: amount,
+      totalCounterPower: this.pendingCounterPower,
+      newTargetPower: this.pendingAttack.targetPower,
+    }
+  }
+
+  /**
+   * Skip counter (不使用反击卡), resolve battle
+   * 如果有暂存的卡，先清理掉
    */
   skipCounter(socketId) {
     if (!this.pendingAttack || this.battleStep !== BATTLE_STEPS.COUNTER) {
@@ -835,13 +1170,48 @@ export class GameEngine {
       return { success: false, message: 'Attacker cannot skip counter' }
     }
 
+    // 如果有暂存的卡，撤销所有效果
+    if (this.stagedCounterCards.length > 0) {
+      const player = this._getPlayer(socketId)
+      for (const staged of [...this.stagedCounterCards].reverse()) {
+        // 撤销力量修改
+        this.pendingCounterPower -= staged.counterValue
+        this.pendingAttack.targetPower -= staged.counterValue
+        
+        // 撤销脚本效果
+        if (staged.powerModsApplied) {
+          for (const mod of staged.powerModsApplied) {
+            for (const p of this.players) {
+              if (p.powerMods?.has(mod.targetId)) {
+                const current = p.powerMods.get(mod.targetId) || 0
+                p.powerMods.set(mod.targetId, current - mod.amount)
+              }
+            }
+            if (this.pendingAttack.targetId === mod.targetId || 
+                this.pendingAttack.targetInstanceId === mod.targetId) {
+              this.pendingAttack.targetPower -= mod.amount
+              this.pendingCounterPower -= mod.amount
+            }
+          }
+        }
+        
+        // 退还DON
+        if (staged.donCostPaid > 0) {
+          player.donActive += staged.donCostPaid
+          player.donRested -= staged.donCostPaid
+        }
+      }
+      this.stagedCounterCards = []
+      this._log('取消所有反击卡')
+    }
+
     return this._resolveBattle()
   }
 
   /**
    * Resolve the pending attack
    */
-  _resolveBattle() {
+  _resolveBattle(confirmedCards = []) {
     if (!this.pendingAttack) {
       return { success: false, message: 'No pending attack' }
     }
@@ -931,10 +1301,14 @@ export class GameEngine {
       this._log(`Attack blocked! (${attack.attackerPower} < ${attack.targetPower})`)
     }
 
+    // 清理"本次战斗"过期的效果
+    this._expireEffects('END_OF_BATTLE')
+    
     // Clear pending attack
     this.pendingAttack = null
     this.battleStep = BATTLE_STEPS.NONE
     this.pendingCounterPower = 0
+    this.stagedCounterCards = []
 
     return result
   }
@@ -1486,6 +1860,9 @@ export class GameEngine {
       currentTurn: this.players[this.currentTurnIndex]?.id,
       pendingAttack: this.pendingAttack,
       pendingEffect: this.pendingEffect,
+      pendingCounterPower: this.pendingCounterPower, // 当前累计的反击力量
+      stagedCounterCards: this.stagedCounterCards,   // 暂存的反击卡（可撤销）
+      activeEffects: this.activeEffects,             // 当前生效中的效果
       winner: this.winner,
       diceRolls: this.diceRolls, // 骰子结果（仅游戏开始时有意义）
       players: this.players.map(p => ({
@@ -1637,5 +2014,43 @@ export class GameEngine {
     }
     this.actionLog.push(entry)
     console.log(`[Turn ${this.turnNumber}] ${message}`)
+  }
+
+  /**
+   * 处理效果过期
+   * @param {string} expiryType - 过期类型: END_OF_BATTLE, END_OF_TURN, OPPONENT_START
+   */
+  _expireEffects(expiryType) {
+    // 移除过期的效果
+    const expiring = this.activeEffects.filter(e => e.expiry === expiryType)
+    
+    for (const effect of expiring) {
+      // 撤销力量修改
+      if (effect.type === 'POWER_MOD' && effect.targetId) {
+        // 找到目标并撤销修改
+        for (const player of this.players) {
+          if (player.powerMods?.has(effect.targetId)) {
+            const current = player.powerMods.get(effect.targetId) || 0
+            player.powerMods.set(effect.targetId, current - (effect.amount || 0))
+            this._log(`效果过期: ${effect.sourceName} 的力量加成消失`)
+          }
+        }
+      }
+    }
+    
+    // 过滤掉已过期的效果
+    this.activeEffects = this.activeEffects.filter(e => e.expiry !== expiryType)
+  }
+
+  /**
+   * 注册一个带过期条件的效果
+   * @param {Object} effect - { type, targetId, amount, expiry, sourceName }
+   */
+  registerEffect(effect) {
+    this.activeEffects.push({
+      ...effect,
+      registeredAt: Date.now(),
+      turnRegistered: this.turnNumber,
+    })
   }
 }

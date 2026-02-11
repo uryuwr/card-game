@@ -103,6 +103,22 @@ export interface GameState {
   turnNumber: number
   currentTurn: string | null
   pendingAttack: PendingAttack | null
+  pendingCounterPower: number
+  stagedCounterCards: Array<{
+    card: Card
+    counterValue: number
+    donCostPaid: number
+    powerModsApplied: Array<{ targetId: string; amount: number }>
+    effectType: string
+    expiry: string
+  }>
+  activeEffects: Array<{
+    type: string
+    targetId?: string
+    amount?: number
+    expiry: string
+    sourceName?: string
+  }>
   
   // Players
   player: Player | null
@@ -176,6 +192,9 @@ const initialState: GameState = {
   turnNumber: 0,
   currentTurn: null,
   pendingAttack: null,
+  pendingCounterPower: 0,
+  stagedCounterCards: [],
+  activeEffects: [],
   player: null,
   opponent: null,
   winner: null,

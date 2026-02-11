@@ -161,16 +161,11 @@ export default function Game() {
     type: string; message: string
   } | null>(null)
   // 反击选择
-  const [selectedCounterIds, setSelectedCounterIds] = useState<Set<string>>(new Set())
   const [counterCollapsed, setCounterCollapsed] = useState(false)
-  const [manualCounterPower, setManualCounterPower] = useState(0)
   const [powerAdjustSign, setPowerAdjustSign] = useState<1 | -1>(1)
-  const [showCounterPowerModal, setShowCounterPowerModal] = useState(false)
-  const [counterPowerDraft, setCounterPowerDraft] = useState(0)
   const [showPowerAdjustModal, setShowPowerAdjustModal] = useState(false)
   const [powerAdjustAmount, setPowerAdjustAmount] = useState(0)
   const [powerAdjustOpenedAt, setPowerAdjustOpenedAt] = useState(0)
-  const [counterAdjustOpenedAt, setCounterAdjustOpenedAt] = useState(0)
   // 通知弹窗 (反击出牌/检索结果)
   const [notification, setNotification] = useState<{ message: string; cards?: Card[] } | null>(null)
   // 攻击箭头
@@ -187,6 +182,21 @@ export default function Game() {
     maxCost?: number
   } | null>(null)
   const [searchSourceName, setSearchSourceName] = useState<string>('')
+  // 目标选择弹窗 (Counter效果等)
+  const [showSelectTargetModal, setShowSelectTargetModal] = useState(false)
+  const [selectTargetData, setSelectTargetData] = useState<{
+    validTargets: Array<{
+      instanceId: string
+      type: 'leader' | 'character'
+      playerId: string
+      isOwn: boolean
+      card: Card
+    }>
+    message: string
+    maxSelect: number
+    sourceCardName: string
+  } | null>(null)
+  const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   // 墓地查看
   const [showTrashViewer, setShowTrashViewer] = useState<'mine' | 'opp' | null>(null)
   const [selectedTrashCardId, setSelectedTrashCardId] = useState<string | null>(null)
@@ -289,6 +299,9 @@ export default function Game() {
           pendingAttack: data.pendingAttack,
           battleStep: data.battleStep,
           winner: data.winner,
+          pendingCounterPower: data.pendingCounterPower || 0,
+          stagedCounterCards: data.stagedCounterCards || [],
+          activeEffects: data.activeEffects || [],
         },
         players: data.players,
       })
@@ -337,6 +350,9 @@ export default function Game() {
           currentTurn: data.currentTurn,
           pendingAttack: data.pendingAttack,
           winner: data.winner,
+          pendingCounterPower: data.pendingCounterPower || 0,
+          stagedCounterCards: data.stagedCounterCards || [],
+          activeEffects: data.activeEffects || [],
         },
         players: data.players 
       })
@@ -423,6 +439,19 @@ export default function Game() {
     }
     socket.on('search:revealed', handleSearchRevealed)
     
+    // 收到目标选择提示 (Counter效果等)
+    const handleSelectTargetPrompt = (data: any) => {
+      setSelectTargetData({
+        validTargets: data.validTargets || [],
+        message: data.message || '选择目标',
+        maxSelect: data.maxSelect || 1,
+        sourceCardName: data.sourceCardName || '',
+      })
+      setSelectedTargetIds(new Set())
+      setShowSelectTargetModal(true)
+    }
+    socket.on('game:select-target-prompt', handleSelectTargetPrompt)
+    
     // Auto Rejoin on mount:
     // If we already have player state (navigated from Lobby after game:start), no rejoin needed.
     // If no player state but token exists, attempt rejoin (page refresh scenario).
@@ -455,6 +484,7 @@ export default function Game() {
       socket.off('connect', handleReconnect)
       socket.off('counter:played', handleCounterPlayed)
       socket.off('search:revealed', handleSearchRevealed)
+      socket.off('game:select-target-prompt', handleSelectTargetPrompt)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, navigate])
@@ -469,14 +499,10 @@ export default function Game() {
     }
   }, [state.error, dispatch])
 
-  // Reset counter selection when leaving counter step
+  // Reset counter UI when leaving counter step
   useEffect(() => {
     if (!isDefending || state.battleStep !== 'counter') {
-      setSelectedCounterIds(new Set())
       setCounterCollapsed(false)
-      setManualCounterPower(0)
-      setShowCounterPowerModal(false)
-      setCounterPowerDraft(0)
     }
   }, [isDefending, state.battleStep])
 
@@ -840,6 +866,29 @@ export default function Game() {
     setPreviewOrigin(null)
   }, [viewedCards])
 
+  // 目标选择确认
+  const confirmSelectTarget = useCallback(() => {
+    const selectedIds = Array.from(selectedTargetIds)
+    socketService.selectTargetResult(selectedIds)
+    setShowSelectTargetModal(false)
+    setSelectTargetData(null)
+    setSelectedTargetIds(new Set())
+    setHoveredCard(null)
+    setPinnedPreviewId(null)
+    setPreviewOrigin(null)
+  }, [selectedTargetIds])
+
+  const cancelSelectTarget = useCallback(() => {
+    // 取消选择时发送空选择
+    socketService.selectTargetResult([])
+    setShowSelectTargetModal(false)
+    setSelectTargetData(null)
+    setSelectedTargetIds(new Set())
+    setHoveredCard(null)
+    setPinnedPreviewId(null)
+    setPreviewOrigin(null)
+  }, [])
+
   // Phase info
   const phaseHint = getPhaseHint(
     state.gamePhase, state.battleStep, isMyTurn,
@@ -860,6 +909,14 @@ export default function Game() {
     if (!card?.effect) return false
     const effectText = card.effect.toLowerCase()
     return effectText.includes('counter') || effectText.includes('反击')
+  }, [])
+
+  // 检查是否是有脚本效果的Counter卡（用于UI提示）
+  const isScriptedCounterCard = useCallback((card?: Card) => {
+    if (!card) return false
+    // 目前已实现脚本的Counter卡
+    const scriptedCounterCards = ['OP01-029'] // 离子光波
+    return scriptedCounterCards.includes(card.cardNumber)
   }, [])
 
   const isBlocker = useCallback((card?: Card) => {
@@ -930,16 +987,6 @@ export default function Game() {
               selected={!isOpp && selectedCard === slot.card.instanceId}
               targetable={(isOpp && targeting && slot.state === 'RESTED') || (!isOpp && donSelectMode)}
               onClick={(e) => {
-                if (Date.now() - counterAdjustOpenedAt < 200) return
-                if (showCounterPowerModal) {
-                  setShowCounterPowerModal(false)
-                  setCounterPowerDraft(0)
-                  setKoSelectMode(false)
-                  setHoveredCard(null)
-                  setPinnedPreviewId(null)
-                  setPreviewOrigin(null)
-                  return
-                }
                 if (isOpp && targeting && slot.state === 'RESTED') {
                   handleSelectTarget(slot.card.instanceId)
                 } else if (!isOpp) {
@@ -1230,20 +1277,7 @@ export default function Game() {
     return canPlay(hoveredCard)
   }, [hoveredCard, isHandPreview, state.player, state.gamePhase, isMyTurn])
 
-  const selectedCounterTotal = useMemo(() => {
-    if (selectedCounterIds.size === 0 && manualCounterPower <= 0) return 0
-    const hand = state.player?.hand || []
-    const base = hand.reduce((sum, card) => {
-      if (!selectedCounterIds.has(card.instanceId)) return sum
-      return sum + (card.counter || 0)
-    }, 0)
-    return base + Math.max(0, manualCounterPower || 0)
-  }, [selectedCounterIds, state.player?.hand, manualCounterPower])
 
-  const counterPreviewPower = useMemo(() => {
-    const base = state.pendingAttack?.targetPower ?? 0
-    return base + selectedCounterTotal
-  }, [state.pendingAttack?.targetPower, selectedCounterTotal])
 
   // ============ RENDER ============
   return (
@@ -1251,7 +1285,7 @@ export default function Game() {
       className="game-root"
       onMouseMove={handleMouseMove}
       onClick={(e) => {
-        if (showPowerAdjustModal || showCounterPowerModal || showSearchModal || showTrashViewer || leaderEffectPrompt || zoneActionMenu) {
+        if (showPowerAdjustModal || showSearchModal || showTrashViewer || leaderEffectPrompt || zoneActionMenu) {
           return
         }
         if (Date.now() < suppressRootClickUntilRef.current || Date.now() - powerAdjustOpenedAt < 400) {
@@ -1799,6 +1833,51 @@ export default function Game() {
         </div>
       )}
 
+      {/* ═══ SELECT TARGET MODAL ═══ */}
+      {showSelectTargetModal && selectTargetData && (
+        <div className="modal-overlay" onClick={cancelSelectTarget}>
+          <div className="search-modal" onClick={e => e.stopPropagation()}>
+            <h2>🎯 {selectTargetData.sourceCardName || '选择目标'}</h2>
+            <p className="search-desc">{selectTargetData.message}</p>
+            <div className="search-cards">
+              {selectTargetData.validTargets.map(target => (
+                <div key={target.instanceId}
+                  className={`search-card ${selectedTargetIds.has(target.instanceId) ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedTargetIds(prev => {
+                      const next = new Set(prev)
+                      if (next.has(target.instanceId)) {
+                        next.delete(target.instanceId)
+                      } else if (next.size < selectTargetData.maxSelect) {
+                        next.add(target.instanceId)
+                      }
+                      return next
+                    })
+                    handleClickPreview(target.card, undefined, 'other')
+                  }}>
+                  <CardComponent card={target.card} width={80} showPower onHover={(c, e) => handleHover(c, e)} />
+                  <div className="search-card-name">
+                    {target.card.nameCn || target.card.name}
+                    {target.type === 'leader' && ' (领袖)'}
+                    {target.isOwn ? '' : ' [对手]'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="search-actions">
+              <button 
+                className="btn btn-primary" 
+                onClick={confirmSelectTarget}
+                disabled={selectedTargetIds.size === 0}
+              >
+                确认 ({selectedTargetIds.size}个目标)
+              </button>
+              <button className="btn btn-secondary" onClick={cancelSelectTarget}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ TRASH VIEWER ═══ */}
       {showTrashViewer && (
         <div className="modal-overlay" onClick={() => setShowTrashViewer(null)}>
@@ -1910,117 +1989,77 @@ export default function Game() {
           <p>
             攻击力量 {state.pendingAttack?.attackerPower} vs
             防御力量 {state.pendingAttack?.targetPower}
+            {(state.pendingCounterPower ?? 0) > 0 && (
+              <span className="counter-accumulated"> (已反击 +{state.pendingCounterPower})</span>
+            )}
           </p>
+          
+          {/* 已暂存的反击卡 - 可点击撤销 */}
+          {(state.stagedCounterCards?.length ?? 0) > 0 && (
+            <div className="used-counter-cards">
+              <span className="used-label">已暂存: </span>
+              {state.stagedCounterCards?.map((uc, idx) => (
+                <span 
+                  key={idx} 
+                  className="used-counter-card unstage-able"
+                  onClick={() => socketService.unstageCounterCard(uc.card.instanceId)}
+                  title="点击撤销"
+                >
+                  {uc.card.nameCn || uc.card.name}
+                  {uc.counterValue > 0 ? ` (+${uc.counterValue})` : ' (效果)'}
+                  <span className="unstage-hint"> ✕</span>
+                </span>
+              ))}
+            </div>
+          )}
+          
+          {/* 确认按钮 - 始终显示 */}
+          <div className="def-actions">
+            <button 
+              className="btn primary" 
+              onClick={() => {
+                if ((state.stagedCounterCards?.length ?? 0) > 0) {
+                  socketService.confirmCounter()
+                } else {
+                  socketService.skipCounter()
+                }
+              }}
+            >
+              {(state.pendingCounterPower ?? 0) > 0 || (state.stagedCounterCards?.length ?? 0) > 0 ? '确认反击' : '不反击'}
+            </button>
+          </div>
+          
+          {/* 可选反击卡列表 - 仅展开时显示 */}
           {!counterCollapsed && (
             <>
-              <p>选择反击卡后点击确认</p>
-              {selectedCounterTotal > 0 && (
-                <p className="counter-preview">
-                  本次反击 +{selectedCounterTotal} → 防御力量 {counterPreviewPower}
-                  {counterPreviewPower >= (state.pendingAttack?.attackerPower ?? 0) ? ' (已足够)' : ''}
-                </p>
-              )}
-              <div className="counter-power-input">
-                <div className="counter-power-row">
-                  <span className="counter-power-label">手动叠加力量</span>
-                  <span className="counter-power-value">+{manualCounterPower}</span>
-                </div>
-                <div className="counter-power-actions">
-                  <button
-                    className="btn btn-mini"
-                    onClick={() => {
-                      setCounterPowerDraft(manualCounterPower)
-                      setShowCounterPowerModal(true)
-                      setCounterAdjustOpenedAt(Date.now())
-                    }}
-                  >自定义</button>
-                  <button className="btn btn-mini" onClick={() => setManualCounterPower(0)}>清零</button>
-                </div>
-              </div>
-              <div className="def-actions">
-                <button className="btn" onClick={() => socketService.skipCounter()}>不反击</button>
-                <button
-                  className="btn primary"
-                  disabled={selectedCounterIds.size === 0 && manualCounterPower === 0}
-                  onClick={() => {
-                    if (selectedCounterIds.size === 0 && manualCounterPower === 0) return
-                    socketService.playCounter(Array.from(selectedCounterIds), manualCounterPower)
-                    setSelectedCounterIds(new Set())
-                    setManualCounterPower(0)
-                  }}
-                >
-                  确认反击{selectedCounterTotal > 0 ? ` (+${selectedCounterTotal})` : ''}
-                </button>
-                {selectedCounterIds.size > 0 && (
-                  <button className="btn" onClick={() => setSelectedCounterIds(new Set())}>清空选择</button>
-                )}
-              </div>
+              <p className="counter-hint">点击卡牌立即使用反击</p>
               <div className="counter-card-list">
                 {(state.player?.hand || [])
                   .filter(c => (c.counter && c.counter > 0) || isCounterMarked(c))
                   .map(c => {
-                    const selected = selectedCounterIds.has(c.instanceId)
+                    const isScripted = isScriptedCounterCard(c)
+                    const donCost = c.cardType === 'EVENT' ? (c.cost || 0) : 0
+                    const canAfford = donCost <= (state.player?.donActive || 0)
                     return (
                       <button
                         key={c.instanceId}
-                        className={`counter-card-btn ${selected ? 'selected' : ''}`}
+                        className={`counter-card-btn ${isScripted ? 'scripted' : ''}`}
+                        disabled={!canAfford}
                         onClick={() => {
-                          setSelectedCounterIds(prev => {
-                            const next = new Set(prev)
-                            if (next.has(c.instanceId)) next.delete(c.instanceId)
-                            else next.add(c.instanceId)
-                            return next
-                          })
+                          if (!canAfford) return
+                          // 暂存Counter卡（可撤销）
+                          socketService.stageCounterCard(c.instanceId)
                         }}
                       >
-                        {c.nameCn || c.name} {c.counter ? `(+${c.counter})` : '(反击)'}
+                        {c.nameCn || c.name} {c.counter ? `(+${c.counter})` : '(效果)'}
+                        {isScripted && ' ⚡'}
+                        {donCost > 0 && ` [${donCost}DON]`}
                       </button>
                     )
                   })}
               </div>
             </>
           )}
-        </div>
-      )}
-
-      {showCounterPowerModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => {
-            if (Date.now() - counterAdjustOpenedAt < 200) return
-            setShowCounterPowerModal(false)
-            setCounterPowerDraft(0)
-          }}
-        >
-          <div className="counter-adjust-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="counter-adjust-title">自定义反击力量</div>
-            <div className="counter-adjust-display">+{counterPowerDraft}</div>
-            <div className="counter-adjust-pad">
-              <button className="btn" onClick={() => setCounterPowerDraft((prev) => prev + 1000)}>1000</button>
-              <button className="btn" onClick={() => setCounterPowerDraft((prev) => prev + 2000)}>2000</button>
-              <button className="btn" onClick={() => setCounterPowerDraft(0)}>清零</button>
-              <button className="btn" onClick={() => setCounterPowerDraft((prev) => Math.max(0, prev - 1000))}>回退</button>
-            </div>
-            <div className="counter-adjust-actions">
-              <button
-                className="btn"
-                onClick={() => {
-                  setShowCounterPowerModal(false)
-                  setCounterPowerDraft(0)
-                }}
-              >取消</button>
-              <button
-                className="btn primary"
-                disabled={counterPowerDraft === 0}
-                onClick={() => {
-                  if (counterPowerDraft === 0) return
-                  setManualCounterPower(counterPowerDraft)
-                  setShowCounterPowerModal(false)
-                  setCounterPowerDraft(0)
-                }}
-              >确认</button>
-            </div>
-          </div>
         </div>
       )}
 

@@ -351,38 +351,153 @@ io.on('connection', (socket) => {
     }
   })
 
-  socket.on(SOCKET_EVENTS.PLAY_COUNTER, ({ cardInstanceId, cardInstanceIds, manualPower }) => {
+  // 暂存反击卡（可撤销）
+  socket.on(SOCKET_EVENTS.STAGE_COUNTER_CARD, ({ cardInstanceId }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room?.engine) return
 
-    // Support both single cardInstanceId and array of cardInstanceIds
-    const ids = cardInstanceIds || (cardInstanceId ? [cardInstanceId] : [])
-    const result = room.engine.playCounter(socket.id, ids, manualPower || 0)
+    const result = room.engine.stageCounterCard(socket.id, cardInstanceId)
     if (result.success) {
-      // 反击成功后自动结算战斗
-      const battleResult = room.engine.skipCounter(socket.id)
-      // 通知攻击方对手使用了哪些反击卡
+      // 通知攻击方对手暂存了反击卡
       const attacker = room.engine._getOpponent(socket.id)
-      if (attacker && result.cardsUsed?.length > 0) {
+      if (attacker && result.cardStaged) {
         const attackerSocket = io.sockets.sockets.get(attacker.id)
         if (attackerSocket) {
-          attackerSocket.emit('counter:played', {
-            cardsUsed: result.cardsUsed.map(c => ({
-              name: c.nameCn || c.name,
-              cardNumber: c.cardNumber,
-              counter: c.counter || 0,
-              imageUrl: c.imageUrl,
-            })),
-            counterPower: result.counterPower,
+          attackerSocket.emit('counter:staged', {
+            card: {
+              name: result.cardStaged.nameCn || result.cardStaged.name,
+              cardNumber: result.cardStaged.cardNumber,
+              counter: result.cardStaged.counter || 0,
+              imageUrl: result.cardStaged.imageUrl,
+            },
+            counterAdded: result.counterAdded,
+            totalCounterPower: result.totalCounterPower,
             newTargetPower: result.newTargetPower,
           })
         }
       }
-      broadcastGameState(room)
-      // 检查战斗结果是否导致游戏结束
-      if (room.engine.winner) {
-        handleGameEnd(room)
+      
+      // 检查是否需要玩家选择目标
+      if (result.needsInteraction && result.interactionType === 'SELECT_TARGET') {
+        socket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
+          validTargets: result.validTargets,
+          message: result.message,
+          maxSelect: result.maxSelect,
+          sourceCardName: result.sourceCardName,
+        })
       }
+      
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 撤销暂存的反击卡
+  socket.on(SOCKET_EVENTS.UNSTAGE_COUNTER_CARD, ({ cardInstanceId }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.unstageCounterCard(socket.id, cardInstanceId)
+    if (result.success) {
+      // 通知攻击方对手撤销了反击卡
+      const attacker = room.engine._getOpponent(socket.id)
+      if (attacker && result.cardUnstaged) {
+        const attackerSocket = io.sockets.sockets.get(attacker.id)
+        if (attackerSocket) {
+          attackerSocket.emit('counter:unstaged', {
+            card: {
+              name: result.cardUnstaged.nameCn || result.cardUnstaged.name,
+              cardNumber: result.cardUnstaged.cardNumber,
+            },
+            totalCounterPower: result.totalCounterPower,
+          })
+        }
+      }
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 确认反击（将暂存卡移入弃牌区并结算战斗）
+  socket.on(SOCKET_EVENTS.CONFIRM_COUNTER, () => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.confirmCounter(socket.id)
+    if (result.success) {
+      // 战斗结算完成，通知双方
+      const attacker = room.engine._getOpponent(socket.id)
+      if (attacker) {
+        const attackerSocket = io.sockets.sockets.get(attacker.id)
+        if (attackerSocket) {
+          attackerSocket.emit('counter:confirmed', {
+            cardsUsed: result.cardsUsed,
+            totalCounterPower: result.totalCounterPower,
+          })
+        }
+      }
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 兼容旧版：立即使用反击卡（现在内部转为暂存+确认）
+  socket.on(SOCKET_EVENTS.USE_COUNTER_CARD, ({ cardInstanceId }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    // 先暂存
+    const stageResult = room.engine.stageCounterCard(socket.id, cardInstanceId)
+    if (!stageResult.success) {
+      socket.emit('error', { message: stageResult.message })
+      return
+    }
+
+    // 如果需要交互（选择目标），不自动确认
+    if (stageResult.needsInteraction) {
+      socket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
+        validTargets: stageResult.validTargets,
+        message: stageResult.message,
+        maxSelect: stageResult.maxSelect,
+        sourceCardName: stageResult.sourceCardName,
+      })
+      broadcastGameState(room)
+      return
+    }
+
+    // 自动确认
+    const confirmResult = room.engine.confirmCounter(socket.id)
+    if (confirmResult.success) {
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: confirmResult.message })
+    }
+  })
+
+  // 添加手动反击力量（不使用卡牌）
+  socket.on('game:add-manual-counter', ({ power }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.addManualCounterPower(socket.id, power)
+    if (result.success) {
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 处理目标选择结果
+  socket.on(SOCKET_EVENTS.SELECT_TARGET_RESULT, ({ selectedInstanceIds }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.resolveSelectTarget(socket.id, selectedInstanceIds || [])
+    if (result.success) {
+      broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
     }
