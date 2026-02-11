@@ -33,7 +33,13 @@ card-game/
 │       ├── index.js     # Socket.IO 服务入口
 │       ├── engine.js    # 游戏引擎（核心逻辑）
 │       ├── rooms.js     # 房间管理
-│       └── cards.js     # 卡牌加载器
+│       ├── cards.js     # 卡牌加载器
+│       └── script-engine/  # 卡牌脚本引擎
+│           ├── index.js        # 模块入口
+│           ├── CardScripts.js  # 脚本注册表
+│           ├── ActionDSL.js    # 原子动作库
+│           ├── ScriptContext.js # 执行上下文
+│           └── TriggerSystem.js # 触发器系统
 │
 ├── client/              # React 前端
 │   └── src/
@@ -319,6 +325,220 @@ myNewAction(params) {
   this.socket?.emit('game:my-new-action', params)
 }
 ```
+
+## 🎴 卡牌脚本引擎
+
+### 架构概览
+
+```
+game-server/src/script-engine/
+├── index.js           # 入口，导出所有模块
+├── CardScripts.js     # 卡牌脚本注册表（以 cardNumber 为 key）
+├── ActionDSL.js       # 原子动作库（MODIFY_POWER, LOG, 等）
+├── ScriptContext.js   # 脚本执行上下文（访问引擎状态）
+└── TriggerSystem.js   # 触发器系统（ON_PLAY, COUNTER, 等）
+```
+
+### 脚本执行流程
+
+```
+卡牌使用 → TriggerSystem 匹配触发器 → ScriptContext 初始化
+    ↓
+遍历 actions → ActionDSL 执行原子操作
+    ↓
+返回结果（是否需要交互、效果是否生效）
+```
+
+### 脚本格式
+
+```javascript
+{
+  triggerType: 'ON_PLAY' | 'ON_ATTACK' | 'COUNTER' | 'TURN_END' | ...,
+  cost: number,              // 可选，费用（如 Counter 卡的 DON 费用）
+  conditions: [              // 触发条件
+    { type: 'CHECK_DON', amount: 2 },
+    { type: 'CHECK_LIFE', operator: '<=', amount: 2 },
+    { type: 'CHECK_RESTRICTION', restriction: 'cannotLifeToHand' },
+  ],
+  actions: [                 // 执行动作
+    { type: 'MODIFY_POWER', target: 'SELF', amount: 2000 },
+    { type: 'LOG', message: '效果发动!' },
+    { type: 'PENDING_SELECT_TARGET', ... },  // 需要玩家交互
+    { type: 'CONDITIONAL_ACTION', condition: {...}, actions: [...] },
+  ],
+}
+```
+
+### Counter 卡牌暂存机制
+
+Counter 卡牌使用"暂存(Staging)"模式，允许玩家预览效果后撤销：
+
+```
+点击Counter卡 → stageCounterCard() → 效果立即生效 → 卡牌标记为"暂存"
+                      ↓
+                可点击撤销 → unstageCounterCard() → 回退所有效果
+                      ↓
+                确认反击 → confirmCounter() → 暂存卡移入弃牌区 → 结算战斗
+```
+
+**暂存条目结构:**
+```javascript
+{
+  card: Card,                    // 卡牌数据
+  counterValue: number,          // +X000 力量值（便于回退）
+  donCostPaid: number,           // 支付的 DON（便于退还）
+  powerModsApplied: [            // 脚本效果产生的力量修改（便于回退）
+    { targetId: string, amount: number }
+  ],
+  effectType: 'COUNTER_VALUE' | 'SCRIPT_EFFECT',
+  expiry: 'END_OF_BATTLE'
+}
+```
+
+### 新增卡牌效果 SOP
+
+#### 1️⃣ 确定触发类型和效果
+
+分析卡牌文本，确定:
+- **触发类型**: `ON_PLAY`, `ON_ATTACK`, `COUNTER`, `TURN_END`, `ON_KO`, ...
+- **条件**: DON 数量、生命值、场上卡牌数量等
+- **效果**: 力量修改、抽卡、选择目标、KO等
+
+#### 2️⃣ 在 CardScripts.js 添加脚本
+
+```javascript
+// game-server/src/script-engine/CardScripts.js
+
+/**
+ * OP01-029 离子光波
+ * COUNTER: 选择己方1张领袖或角色，本回合力量+2000，若生命<=2则再+2000
+ * 费用: 1 DON
+ */
+'OP01-029': {
+  triggerType: 'COUNTER',
+  cost: 1,
+  conditions: [],
+  actions: [
+    {
+      type: 'PENDING_SELECT_TARGET',
+      targetScope: 'player',
+      targetTypes: ['leader', 'character'],
+      maxSelect: 1,
+      message: '选择己方1张领袖或角色',
+      onSelect: [
+        { type: 'MODIFY_POWER', target: 'SELECTED', amount: 2000 },
+        {
+          type: 'CONDITIONAL_ACTION',
+          condition: { type: 'CHECK_LIFE', operator: '<=', amount: 2 },
+          actions: [
+            { type: 'MODIFY_POWER', target: 'SELECTED', amount: 2000 },
+            { type: 'LOG', message: '生命<=2，额外+2000!' },
+          ],
+        },
+      ],
+    },
+  ],
+},
+```
+
+#### 3️⃣ 验证已支持的 Action 类型
+
+检查 `ActionDSL.js` 是否已支持所需的 action 类型。常用类型:
+
+| Action | 说明 |
+|--------|------|
+| `MODIFY_POWER` | 修改力量 |
+| `LOG` | 输出日志 |
+| `PENDING_SELECT_TARGET` | 等待玩家选择目标 |
+| `CONDITIONAL_ACTION` | 条件执行 |
+| `ATTACH_DON` / `PENDING_ATTACH_DON` | 贴 DON |
+| `LIFE_TO_HAND` | 生命加入手牌 |
+| `ADD_ATTACK_STATE` | 添加攻击状态（如忽略阻挡者） |
+
+#### 4️⃣ 如需新 Action 类型，按以下步骤添加
+
+见下一节 "新增底层逻辑 SOP"。
+
+#### 5️⃣ 测试脚本效果
+
+```bash
+cd game-server
+# 启动服务后，在游戏中测试卡牌效果
+npm run dev
+```
+
+### 新增底层逻辑 SOP
+
+当现有 Action 类型不足以实现新卡牌效果时，需要扩展底层逻辑。
+
+#### 1️⃣ 在 ActionDSL.js 添加新的原子操作
+
+```javascript
+// game-server/src/script-engine/ActionDSL.js
+
+/**
+ * 新增: 将对手场上角色返回手牌
+ * @param {string} targetInstanceId - 目标卡牌实例ID
+ */
+bounceToHand(targetInstanceId) {
+  const opponent = this.context.getOpponent()
+  const charIndex = opponent.characters.findIndex(
+    s => s.card.instanceId === targetInstanceId
+  )
+  if (charIndex === -1) {
+    this.context.log(`bounceToHand 失败: 找不到目标`)
+    return false
+  }
+
+  const [slot] = opponent.characters.splice(charIndex, 1)
+  
+  // 释放贴附的 DON
+  opponent.donRested += slot.attachedDon
+  
+  // 卡牌返回手牌
+  opponent.hand.push(slot.card)
+  
+  this.context.log(`${slot.card.nameCn || slot.card.name} 返回手牌`)
+  return true
+}
+```
+
+#### 2️⃣ 在 TriggerSystem 注册新 Action 类型
+
+```javascript
+// game-server/src/script-engine/TriggerSystem.js - executeAction()
+
+case 'BOUNCE_TO_HAND':
+  if (!action.target || action.target === 'SELECTED') {
+    // 需要玩家选择目标
+    return { needsInteraction: true, interactionType: 'SELECT_TARGET', ... }
+  }
+  return { success: dsl.bounceToHand(action.target) }
+```
+
+#### 3️⃣ 如需新的条件检查
+
+在 `TriggerSystem.checkConditions()` 添加:
+
+```javascript
+case 'CHECK_FIELD_COUNT':
+  const count = player.characters.length
+  return compareValue(count, cond.operator, cond.amount)
+```
+
+#### 4️⃣ 如需新的交互类型
+
+1. **服务端**: 在 `engine.js` 添加处理方法
+2. **Socket事件**: 在 `constants.js` 和 `index.js` 注册
+3. **客户端**: 在 `socket.ts` 添加调用方法，在 `Game.tsx` 添加 UI
+
+#### 5️⃣ 更新状态同步
+
+如果新逻辑涉及新的游戏状态字段:
+
+1. `engine.js` - `getState()` 返回新字段
+2. `GameContext.tsx` - 更新 TypeScript 接口
+3. `Game.tsx` - `handleGameUpdate` / `handleGameSync` 处理新字段
 
 ### 调试技巧
 
