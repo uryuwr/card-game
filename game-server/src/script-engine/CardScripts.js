@@ -136,4 +136,25 @@ export const CARD_SCRIPTS = {
       },
     ],
   },
+
+  /**
+   * OP03-003 伊佐 (Izo)
+   * ON_PLAY: 看牌组顶5张，检索1张非伊佐的[白胡子海盗团]特征卡加入手牌
+   */
+  'OP03-003': {
+    triggerType: 'ON_PLAY',
+    conditions: [],
+    actions: [
+      {
+        type: 'PENDING_SEARCH',
+        count: 5,                    // 看顶部5张
+        maxSelect: 1,                // 最多选1张
+        filter: {
+          trait: '白胡子海盗团',     // 必须有白胡子海盗团特征
+          excludeCardNumber: 'OP03-003',  // 排除伊佐自己
+        },
+        message: '选择1张非"伊佐"的拥有《白胡子海盗团》特征的卡牌加入手牌',
+      },
+    ],
+  },
 }

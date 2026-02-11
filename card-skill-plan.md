@@ -52,7 +52,7 @@
 |:---|:---|:---|:---|:---:|:---:|
 | **OP02-001** | **爱德华·纽哥特** (Leader) | `TURN_END` | **效果**: 生命区顶牌入手<br>**实现**: `lifeToHand(0)` | - | ✅ 已支持 |
 | **OP02-004** | **爱德华·纽哥特** (Char) | `ON_PLAY`<br>`ON_ATTACK` | **Play**: 领袖+2000, 禁回血 (✅)<br>**Attack**: [Don!! x2] KO <=3000 (🔄 待UI)<br>**实现**: 复合脚本 | 🖱️ 选目标 | 🚧 部分支持 |
-| **OP03-003** | **伊佐** | `ON_PLAY` | **效果**: 看顶5张检索 [WB Pirates]<br>**自动化**: 同奈美 (Filter: `trait='Whitebeard Pirates'`) | 🖱️ 选卡 | 🔄 待实现 |
+| **OP03-003** | **伊佐** | `ON_PLAY` | **效果**: 看顶5张检索 [WB Pirates]<br>**自动化**: 同奈美 (Filter: `trait='白胡子海盗团'`) | 🖱️ 选卡 | ✅ 已支持 |
 | **OP03-013** | **马尔高** | `ON_PLAY`<br>`ON_KO` | **Play**: KO <=3000<br>**KO**: 弃1事件复活 (Interrupt)<br>**自动化**: Setup KO Interrupt -> Discard -> Revive | 🖱️ 选目标 | 🔄 待实现 |
 | **OP02-013** | **艾斯** | `ON_PLAY` | **效果**: 2个对手-3000; 若领袖是WB则获得[Rush]<br>**自动化**: Debuff x 2Targets -> Check Leader -> Add Keyword | 🖱️ 选2目标 | 🔄 待实现 |
 | **OP02-008** | **乔兹** | `CONSTANT` | **效果**: 若生命<=2 & 领袖WB -> 获得[Rush]<br>**自动化**: 动态 `hasKeyword` | - | 🔄 待实现 |
