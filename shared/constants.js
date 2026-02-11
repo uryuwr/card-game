@@ -75,6 +75,9 @@ export const SOCKET_EVENTS = {
   SET_READY: 'room:ready',
   SELECT_LEADER: 'room:select-leader',
   ROOM_LEAVE: 'room:leave',
+  REJOIN_GAME: 'game:rejoin',
+  GAME_SYNC: 'game:sync',
+  GAME_REJOIN_FAILED: 'game:rejoin-failed',
   
   // Matchmaking
   MATCHMAKING_JOIN: 'matchmaking:join',

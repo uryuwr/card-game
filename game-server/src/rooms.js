@@ -11,19 +11,30 @@ export class RoomManager {
     this.rooms = new Map()
     /** @type {Map<string, string>} socketId -> roomId */
     this.socketToRoom = new Map()
-  /** @type {Array<{socketId: string, name: string, deckId: string, timestamp: number}>} */
+    /** @type {Map<string, string>} userId -> roomId */
+    this.userIdToRoom = new Map()
+    /** @type {Map<string, boolean>} userId -> isConnected */
+    this.playerConnectionStatus = new Map()
+    /** @type {Map<string, NodeJS.Timeout>} userId -> timeoutId */
+    this.disconnectTimers = new Map()
+
+    /** @type {Array<{socketId: string, name: string, deckId: string, timestamp: number}>} */
     this.matchmakingQueue = []
   }
 
   /**
    * Create a new room with deck selection
    */
-  createRoom(socketId, playerName, deckId) {
+  createRoom(socketId, playerName, deckId, userId) {
+    // If no userId provided, generate one (fallback)
+    const finalUserId = userId || uuidv4()
+    
     const roomId = uuidv4().slice(0, 8).toUpperCase()
     const room = {
       id: roomId,
       players: [{ 
         socketId, 
+        userId: finalUserId,
         name: playerName,
         deckId,
         ready: false,
@@ -34,25 +45,35 @@ export class RoomManager {
     }
     this.rooms.set(roomId, room)
     this.socketToRoom.set(socketId, roomId)
-    return room
+    this.userIdToRoom.set(finalUserId, roomId)
+    this.playerConnectionStatus.set(finalUserId, true)
+    
+    return { room, userId: finalUserId }
   }
 
   /**
    * Join an existing room
    */
-  joinRoom(roomId, socketId, playerName, deckId) {
+  joinRoom(roomId, socketId, playerName, deckId, userId) {
     const room = this.rooms.get(roomId)
     if (!room || room.players.length >= 2) return null
     if (room.status !== 'waiting') return null
 
+    // If no userId provided, generate one (fallback)
+    const finalUserId = userId || uuidv4()
+
     room.players.push({ 
-      socketId, 
+      socketId,
+      userId: finalUserId,
       name: playerName,
       deckId,
       ready: false,
     })
     this.socketToRoom.set(socketId, roomId)
-    return room
+    this.userIdToRoom.set(finalUserId, roomId)
+    this.playerConnectionStatus.set(finalUserId, true)
+    
+    return { room, userId: finalUserId }
   }
 
   /**
@@ -130,16 +151,26 @@ export class RoomManager {
   }
 
   /**
-   * Remove player from room
+   * Remove player from room (immediately)
    */
   removePlayer(socketId) {
     const roomId = this.socketToRoom.get(socketId)
     if (!roomId) return null
     
     this.socketToRoom.delete(socketId)
-
+    
     const room = this.rooms.get(roomId)
     if (room) {
+      const player = room.players.find(p => p.socketId === socketId)
+      if (player) {
+         this.userIdToRoom.delete(player.userId)
+         this.playerConnectionStatus.delete(player.userId)
+         if (this.disconnectTimers.has(player.userId)) {
+             clearTimeout(this.disconnectTimers.get(player.userId))
+             this.disconnectTimers.delete(player.userId)
+         }
+      }
+
       room.players = room.players.filter((p) => p.socketId !== socketId)
       if (room.players.length === 0) {
         this.rooms.delete(roomId)
@@ -150,6 +181,102 @@ export class RoomManager {
       return room
     }
     return null
+  }
+
+  /**
+   * Handle player disconnect (with timeout for reconnection)
+   */
+  handleDisconnect(socketId) {
+    const roomId = this.socketToRoom.get(socketId)
+    if (!roomId) return null
+
+    const room = this.rooms.get(roomId)
+    if (!room) return null
+
+    const player = room.players.find(p => p.socketId === socketId)
+    if (!player) return null
+
+    // Mark as disconnected
+    this.playerConnectionStatus.set(player.userId, false)
+
+    // If game is in progress, start grace period timer
+    if (room.status === 'playing' || room.status === 'starting') {
+      console.log(`[Disconnect] Player ${player.name} (${player.userId}) disconnected. Starting 60s timer.`)
+      
+      const timer = setTimeout(() => {
+        console.log(`[Timeout] Player ${player.name} (${player.userId}) reconnection timeout. Forfeiting game.`)
+        // Calculate winner (the other player)
+        const winner = room.players.find(p => p.userId !== player.userId)
+        
+        if (winner) {
+            this.finishRoom(roomId, winner.userId) // Mark as finished with winner
+            // We should probably notify the winner if they are still connected, 
+            // but since we are inside a timeout, we generally rely on the client checking status or 
+            // maybe we can emit an event if we had access to 'io' here, but we don't.
+            // The RoomManager doesn't emit events directly. 
+            // We'll rely on the winner seeing the 'finished' state or connection close later,
+            // OR we can pass a callback to handleDisconnect?
+            // For now, let's just finish the room. 
+            // Ideally we need to emit 'game_over' to the remaining player.
+            // We can add an 'onTimeout' callback to this method or class.
+            
+            if (this.onTimeoutCallback) {
+                this.onTimeoutCallback(roomId, winner.userId)
+            }
+        }
+        
+        // Use cleanUpRoom logic (simulated by removePlayer for both?)
+        // Or just leave it as finished.
+        // If we want to clean up:
+        // this.removePlayer(player.socketId) // This would convert it to 'waiting' which is wrong.
+        
+        // Proper cleanup for a finished room would only happen when players leave.
+        // But the disconnected player is GONE. So we should remove their socket mapping.
+        this.socketToRoom.delete(socketId)
+        // And userId mapping? Maybe keep it so they can see the result if they come back late?
+        // But for now let's just clean up the timer.
+        this.disconnectTimers.delete(player.userId)
+        
+      }, 60000) // 60 seconds
+
+      this.disconnectTimers.set(player.userId, timer)
+      return { action: 'timer_started', room, userId: player.userId }
+    } else {
+      // If waiting or finished, remove immediately
+      return { action: 'removed', room: this.removePlayer(socketId) }
+    }
+  }
+
+  /**
+   * Handle player rejoin
+   */
+  handleRejoin(socketId, userId) {
+    const roomId = this.userIdToRoom.get(userId)
+    if (!roomId) return { success: false, error: 'Room not found' }
+
+    const room = this.rooms.get(roomId)
+    if (!room) return { success: false, error: 'Room expired' }
+
+    const player = room.players.find(p => p.userId === userId)
+    if (!player) return { success: false, error: 'Player not in room' }
+
+    // Clear disconnect timer if exists
+    if (this.disconnectTimers.has(userId)) {
+      clearTimeout(this.disconnectTimers.get(userId))
+      this.disconnectTimers.delete(userId)
+      console.log(`[Rejoin] Timer cleared for ${userId}`)
+    }
+
+    // Update socket mapping
+    const oldSocketId = player.socketId
+    if (oldSocketId) {
+        this.socketToRoom.delete(oldSocketId) // Remove old socket mapping
+    }
+    player.socketId = socketId
+    this.socketToRoom.set(socketId, roomId)
+    this.playerConnectionStatus.set(userId, true)
+
+    return { success: true, room, player, oldSocketId }
   }
 
   /**

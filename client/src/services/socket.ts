@@ -38,19 +38,47 @@ class SocketService {
   }
 
   // =====================
+  // TOKEN MANAGEMENT
+  // =====================
+  saveToken(token: string) {
+    sessionStorage.setItem('card_game_token', token)
+  }
+
+  getToken() {
+    return sessionStorage.getItem('card_game_token')
+  }
+
+  clearToken() {
+    sessionStorage.removeItem('card_game_token')
+  }
+
+  // =====================
   // ROOM OPERATIONS  
   // =====================
   
   createRoom(playerName: string, deckId: string) {
-    this.socket?.emit('room:create', { playerName, deckId })
+    // If we have an existing token, we might want to send it? 
+    // But createRoom implies a new game. 
+    // Server supports receiving userId to maintain identity if needed, 
+    // but typically create room is a new session. 
+    // Let's pass userId if we have it? No, keep it simple for now or check server.
+    // Server: createRoom(socketId, playerName, deckId, userId)
+    const userId = this.getToken() || undefined
+    this.socket?.emit('room:create', { playerName, deckId, userId })
   }
 
   joinRoom(roomId: string, playerName: string, deckId: string) {
-    this.socket?.emit('room:join', { roomId, playerName, deckId })
+    const userId = this.getToken() || undefined
+    this.socket?.emit('room:join', { roomId, playerName, deckId, userId })
+  }
+
+  rejoinGame(userId: string) {
+    this.socket?.emit('game:rejoin', { userId })
   }
 
   leaveRoom() {
     this.socket?.emit('room:leave')
+    this.clearToken()
   }
 
   setReady(ready: boolean) {

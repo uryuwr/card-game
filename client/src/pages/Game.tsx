@@ -269,18 +269,74 @@ export default function Game() {
       setShowSearchModal(true)
     }
 
+    /* RECONNECTION HANDLERS */
+    const handleGameSync = (data: any) => {
+      console.log('[Game] State synced:', data)
+      dispatch({ 
+        type: 'GAME_SYNC', 
+        roomId: data.roomId, 
+        state: {
+          gamePhase: data.gamePhase,
+          battleStep: data.battleStep,
+          turnNumber: data.turnNumber,
+          currentTurn: data.currentTurn,
+          pendingAttack: data.pendingAttack,
+          winner: data.winner,
+        },
+        players: data.players 
+      })
+    }
+    
+    const handleRejoinFailed = (data: any) => {
+      console.error('[Game] Rejoin failed:', data.message)
+      dispatch({ type: 'SET_ERROR', error: '重连失败: ' + data.message })
+      navigate('/lobby')
+    }
+
+    const handlePlayerLeft = (data: any) => {
+        if (data.reason === 'reconnecting') {
+            dispatch({ type: 'SET_OPPONENT_RECONNECTING', isReconnecting: true, timeout: data.timeout })
+        } else {
+             dispatch({ type: 'ADD_LOG', message: '对手已离开游戏' })
+        }
+    }
+
+    const handlePlayerJoined = (data: any) => {
+        // If opponent rejoined
+        if (data.player && !data.player.isSelf) {
+            dispatch({ type: 'SET_OPPONENT_RECONNECTING', isReconnecting: false })
+            dispatch({ type: 'ADD_LOG', message: `对手 ${data.player.name} 已重连` })
+        }
+    }
+
     socket.on('game:start', handleGameStart)
     socket.on('game:update', handleGameUpdate)
+    socket.on('game:sync', handleGameSync)
+    socket.on('game:rejoin-failed', handleRejoinFailed)
+    socket.on('player:left', handlePlayerLeft)
+    socket.on('player:joined', handlePlayerJoined)
     socket.on('attack:declared', handleAttackDeclared)
     socket.on('game:end', handleGameEnd)
     socket.on('error', handleError)
     socket.on('game:leader-effect-prompt', handleLeaderEffectPrompt)
     socket.on('game:view-top-result', handleViewTopResult)
-    if (!state.player) socket.emit('game:sync')
+    
+    // Auto Rejoin if no state but token exists
+    if (!state.player) {
+       const token = socketService.getToken()
+       if (token) {
+         console.log('[Game] No local state, attempting rejoin with token:', token)
+         socketService.rejoinGame(token)
+       }
+    }
 
     return () => {
       socket.off('game:start', handleGameStart)
       socket.off('game:update', handleGameUpdate)
+      socket.off('game:sync', handleGameSync)
+      socket.off('game:rejoin-failed', handleRejoinFailed)
+      socket.off('player:left', handlePlayerLeft)
+      socket.off('player:joined', handlePlayerJoined)
       socket.off('attack:declared', handleAttackDeclared)
       socket.off('game:end', handleGameEnd)
       socket.off('error', handleError)
@@ -1053,6 +1109,24 @@ export default function Game() {
         }
       }}
     >
+      {state.opponentReconnecting && (
+        <div style={{
+           position: 'fixed',
+           top: 0, 
+           left: 0, 
+           width: '100vw', 
+           padding: '8px', 
+           background: '#d32f2f', 
+           color: 'white', 
+           textAlign: 'center', 
+           zIndex: 10000,
+           fontWeight: 'bold',
+           fontSize: '16px',
+           boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+        }}>
+           ⏳ 对手断线重连中... (等待 {state.opponentReconnectingTimeout || 60}s)
+        </div>
+      )}
       <div className="game-scaler" style={{
         width: sizes.designW, height: sizes.designH,
         transform: `scale(${sizes.scale})`,

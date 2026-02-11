@@ -22,6 +22,19 @@ const io = new Server(httpServer, {
 
 const roomManager = new RoomManager()
 
+// Handle disconnection timeout (forfeit)
+roomManager.onTimeoutCallback = (roomId, winnerUserId) => {
+  const room = roomManager.getRoom(roomId)
+  if (room && room.engine) {
+    const winner = room.players.find(p => p.userId === winnerUserId)
+    if (winner) {
+      console.log(`[Forfeit] Room ${roomId} won by ${winner.name}`)
+      room.engine.winner = winner.socketId
+      handleGameEnd(room)
+    }
+  }
+}
+
 // Pre-load card pool on startup
 getCardPoolAsync().then(() => console.log('Card pool loaded'))
 
@@ -32,26 +45,30 @@ io.on('connection', (socket) => {
   // ROOM EVENTS
   // =====================
 
-  socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ playerName, deckId }) => {
-    const room = roomManager.createRoom(socket.id, playerName, deckId)
+  socket.on(SOCKET_EVENTS.ROOM_CREATE, ({ playerName, deckId, userId }) => {
+    const { room, userId: newUserId } = roomManager.createRoom(socket.id, playerName, deckId, userId)
     socket.join(room.id)
     socket.emit(SOCKET_EVENTS.ROOM_CREATED, { 
       roomId: room.id,
       room: sanitizeRoom(room),
+      userId: newUserId
     })
-    console.log(`[房间] ${playerName} 创建了房间 ${room.id}, 卡组: ${deckId}`)
+    console.log(`[房间] ${playerName} 创建了房间 ${room.id}, 卡组: ${deckId} (User: ${newUserId})`)
   })
 
-  socket.on(SOCKET_EVENTS.ROOM_JOIN, ({ roomId, playerName, deckId }) => {
-    const room = roomManager.joinRoom(roomId, socket.id, playerName, deckId)
-    if (!room) {
+  socket.on(SOCKET_EVENTS.ROOM_JOIN, ({ roomId, playerName, deckId, userId }) => {
+    const result = roomManager.joinRoom(roomId, socket.id, playerName, deckId, userId)
+    if (!result) {
       socket.emit('error', { message: '房间不存在或已满' })
       return
     }
+    const { room, userId: newUserId } = result
+
     socket.join(roomId)
     socket.emit(SOCKET_EVENTS.ROOM_JOINED, { 
       roomId,
       room: sanitizeRoom(room),
+      userId: newUserId
     })
     
     // Notify other player
@@ -59,7 +76,57 @@ io.on('connection', (socket) => {
       player: { name: playerName, deckId },
     })
     
-    console.log(`[房间] ${playerName} 加入了房间 ${roomId}`)
+    console.log(`[房间] ${playerName} 加入了房间 ${roomId} (User: ${newUserId})`)
+  })
+
+  // REJOIN GAME
+  socket.on(SOCKET_EVENTS.REJOIN_GAME, ({ userId }) => {
+    console.log(`[Rejoin] Attempting rejoin for User: ${userId}`)
+    const result = roomManager.handleRejoin(socket.id, userId)
+    
+    if (!result.success) {
+      console.log(`[Rejoin] Failed: ${result.error}`)
+      socket.emit(SOCKET_EVENTS.GAME_REJOIN_FAILED, { message: result.error })
+      return
+    }
+
+    const { room, player, oldSocketId } = result
+    socket.join(room.id)
+    
+    // Update socket ID in engine if game is running
+    if (room.engine) {
+      if (oldSocketId) {
+        room.engine.reconnectPlayer(oldSocketId, socket.id)
+      }
+      
+      // Send full state to reconnected player
+      const state = room.engine.getStateForPlayer(socket.id)
+      socket.emit(SOCKET_EVENTS.GAME_SYNC, { 
+        roomId: room.id, 
+        ...state,
+        isReconnected: true 
+      })
+      
+      // Notify opponent that player is back
+      socket.to(room.id).emit(SOCKET_EVENTS.PLAYER_JOINED, {
+        player: { 
+            name: player.name, 
+            deckId: player.deckId,
+            userId: player.userId,
+            isReconnected: true
+        }
+      })
+      
+      console.log(`[Rejoin] User ${userId} reconnected to room ${room.id} and synced state`)
+    } else {
+      // Room in waiting state
+      socket.emit(SOCKET_EVENTS.ROOM_JOINED, { 
+        roomId: room.id, 
+        room: sanitizeRoom(room),
+        userId: userId
+      })
+      console.log(`[Rejoin] User ${userId} reconnected to waiting room ${room.id}`)
+    }
   })
 
   socket.on(SOCKET_EVENTS.ROOM_LIST, () => {
@@ -544,22 +611,28 @@ io.on('connection', (socket) => {
     // Remove from matchmaking queue
     roomManager.removeFromQueue(socket.id)
     
-    const room = roomManager.getRoomBySocket(socket.id)
-    if (room) {
-      // Notify other player
-      io.to(room.id).emit(SOCKET_EVENTS.PLAYER_LEFT, { socketId: socket.id })
+    const result = roomManager.handleDisconnect(socket.id)
+    
+    if (result) {
+      const { action, room, userId } = result
       
-      // Handle as forfeit if game in progress
-      if (room.engine && !room.engine.winner) {
-        const opponent = room.players.find(p => p.socketId !== socket.id)
-        if (opponent) {
-          room.engine.winner = opponent.socketId
-          handleGameEnd(room)
-        }
+      if (action === 'timer_started') {
+        // Game still in progress, waiting for reconnect
+        console.log(`[Disconnect] User ${userId} disconnected, waiting for reconnect...`)
+        // Notify opponent?
+        io.to(room.id).emit(SOCKET_EVENTS.PLAYER_LEFT, { 
+          socketId: socket.id,
+          reason: 'reconnecting',
+          timeout: 60
+        })
+      } else if (action === 'removed' && room) {
+        // Normal removal (waiting room or finished)
+        io.to(room.id).emit(SOCKET_EVENTS.PLAYER_LEFT, { socketId: socket.id })
       }
-      
-      roomManager.removePlayer(socket.id)
+    } else {
+        // Fallback for cases not handled by handleDisconnect (e.g. not in room)
     }
+
     console.log(`[断开] ${socket.id}`)
   })
 })

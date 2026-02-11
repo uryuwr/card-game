@@ -111,6 +111,10 @@ export interface GameState {
   // Result
   winner: string | null
   
+  // Opponent Status
+  opponentReconnecting: boolean
+  opponentReconnectingTimeout?: number
+  
   // UI state
   selectedCard: string | null
   targetingMode: 'none' | 'attack' | 'blocker' | 'counter' | 'effect'
@@ -151,11 +155,13 @@ type GameAction =
   | { type: 'CLEAR_ROOM' }
   | { type: 'GAME_START'; player: Player; opponent: Player; phase: GamePhase; turnNumber: number; currentTurn: string }
   | { type: 'GAME_UPDATE'; state: Partial<GameState>; players: Player[] }
+  | { type: 'GAME_SYNC'; roomId: string; state: Partial<GameState>; players: Player[] }
   | { type: 'SET_PENDING_ATTACK'; attack: PendingAttack | null; battleStep: BattleStep }
   | { type: 'SET_SELECTED_CARD'; cardId: string | null }
   | { type: 'SET_TARGETING_MODE'; mode: GameState['targetingMode'] }
   | { type: 'ADD_LOG'; message: string }
   | { type: 'SET_WINNER'; winner: string }
+  | { type: 'SET_OPPONENT_RECONNECTING'; isReconnecting: boolean; timeout?: number }
   | { type: 'SET_ERROR'; error: string | null }
   | { type: 'RESET' }
 
@@ -173,6 +179,7 @@ const initialState: GameState = {
   player: null,
   opponent: null,
   winner: null,
+  opponentReconnecting: false,
   selectedCard: null,
   targetingMode: 'none',
   actionLog: [],
@@ -236,7 +243,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         opponent: opp || state.opponent,
       }
     }
-    
+    case 'GAME_SYNC': {
+      // Full state hydration
+      const self = normalizePlayer(action.players.find(p => p.isSelf) || null)
+      const opp = normalizePlayer(action.players.find(p => !p.isSelf) || null)
+      
+      return {
+        ...state,
+        phase: 'playing',
+        roomId: action.roomId,
+        ...action.state,
+        player: self || state.player,
+        opponent: opp || state.opponent,
+        error: null,
+      }
+    }    
     case 'SET_PENDING_ATTACK':
       return { 
         ...state, 
@@ -261,6 +282,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     
     case 'SET_WINNER':
       return { ...state, winner: action.winner, phase: 'ended' }
+
+    case 'SET_OPPONENT_RECONNECTING':
+      return { 
+        ...state, 
+        opponentReconnecting: action.isReconnecting,
+        opponentReconnectingTimeout: action.timeout 
+      }
     
     case 'SET_ERROR':
       return { ...state, error: action.error }

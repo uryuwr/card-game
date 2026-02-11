@@ -33,6 +33,19 @@ export class GameEngine {
   }
 
   /**
+   * Reconnect a player by updating their socket ID
+   */
+  reconnectPlayer(oldSocketId, newSocketId) {
+    const player = this.players.find(p => p.id === oldSocketId)
+    if (player) {
+      player.id = newSocketId
+      console.log(`[ENGINE] Player reconnected: ${oldSocketId} -> ${newSocketId}`)
+      return true
+    }
+    return false
+  }
+
+  /**
    * Initialize and start the game (async version using real deck data)
    */
   async startGame() {

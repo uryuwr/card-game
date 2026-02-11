@@ -63,6 +63,10 @@ export default function Lobby() {
     if (!socket) return
 
     const handleRoomCreated = (data: any) => {
+      if (data.userId) {
+        socketService.saveToken(data.userId)
+        console.log('[Lobby] Token saved:', data.userId)
+      }
       dispatch({ type: 'SET_ROOM', roomId: data.roomId, room: data.room })
       setMode('room')
       setIsConnecting(false)
@@ -70,6 +74,10 @@ export default function Lobby() {
 
     const handleRoomJoined = (data: any) => {
       console.log('[Lobby] room:joined received:', data)
+      if (data.userId) {
+        socketService.saveToken(data.userId)
+        console.log('[Lobby] Token saved:', data.userId)
+      }
       dispatch({ type: 'SET_ROOM', roomId: data.roomId, room: data.room })
       setMode('room')
       setIsConnecting(false)
