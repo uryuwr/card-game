@@ -62,15 +62,15 @@ class SocketService {
   // TOKEN MANAGEMENT
   // =====================
   saveToken(token: string) {
-    sessionStorage.setItem('card_game_token', token)
+    localStorage.setItem('card_game_token', token)
   }
 
   getToken() {
-    return sessionStorage.getItem('card_game_token')
+    return localStorage.getItem('card_game_token')
   }
 
   clearToken() {
-    sessionStorage.removeItem('card_game_token')
+    localStorage.removeItem('card_game_token')
   }
 
   // =====================
