@@ -1,0 +1,27 @@
+services:
+  card-game:
+    build: .
+    container_name: card-game
+    ports:
+      - "8000:8000"   # API Server
+      - "3001:3001"   # Game Server
+      - "5173:5173"   # Client
+    volumes:
+      # Logs
+      - ./logs:/app/logs
+      # Data Persistence (Database)
+      - ./data:/app/data
+      # Card Assets (Images managed by users/scrapers)
+      - ./asserts:/app/asserts
+      # Cache EasyOCR models
+      - ./data/easyocr:/root/.EasyOCR
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      - ENABLE_TUNNEL=true
+      - DEV_MODE=false
+      # Override DB path to use the mounted data volume
+      # Note: CWD is /app/api-server, so ../data is /app/data
+      - DATABASE_URL=sqlite+aiosqlite:///../data/card_game.db
+    restart: unless-stopped
