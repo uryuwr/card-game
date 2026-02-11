@@ -35,8 +35,13 @@ export class ScriptEngine {
    * @param {string} playerId - 所属玩家ID
    */
   registerCard(card, instanceId, playerId) {
+    console.log(`[ScriptEngine] registerCard: ${card.cardNumber} (${card.nameCn || card.name})`)
     const scriptDef = this._getScriptDefinition(card)
-    if (!scriptDef) return
+    if (!scriptDef) {
+      console.log(`[ScriptEngine] No script found for ${card.cardNumber}`)
+      return
+    }
+    console.log(`[ScriptEngine] Script found for ${card.cardNumber}:`, JSON.stringify(scriptDef).slice(0, 100))
 
     const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
 
@@ -96,16 +101,19 @@ export class ScriptEngine {
    */
   executeTrigger(triggerType, triggerInfo) {
     const scripts = this.triggerSystem.getScripts(triggerType)
+    console.log(`[ScriptEngine] executeTrigger(${triggerType}): ${scripts.length} scripts found, source: ${triggerInfo.sourceCard?.cardNumber}`)
     if (scripts.length === 0) return []
 
     const results = []
 
     for (const entry of scripts) {
+      console.log(`[ScriptEngine] Checking script: ${entry.cardNumber}, instanceId: ${entry.instanceId}, sourceInstance: ${triggerInfo.sourceCard?.instanceId}`)
       // 检查是否是相关玩家的脚本
       // ON_PLAY/ON_ATTACK: 只执行触发源所属玩家的脚本
       // ON_KO: 被KO卡牌所属玩家的脚本
       // TURN_END: 当前回合玩家的脚本
       if (!this._shouldExecute(triggerType, entry, triggerInfo)) {
+        console.log(`[ScriptEngine] _shouldExecute returned false for ${entry.cardNumber}`)
         continue
       }
 
@@ -214,7 +222,9 @@ export class ScriptEngine {
       case 'CHECK_DON': {
         // 检查源卡牌绑定的 DON 数 >= N
         const don = context.getSourceDon()
-        return don >= (condition.amount || 0)
+        const required = condition.amount || 0
+        console.log(`[ScriptEngine] CHECK_DON: ${context.getSourceCard()?.cardNumber} has ${don} DON, need ${required}`)
+        return don >= required
       }
 
       case 'CHECK_LIFE': {
@@ -341,6 +351,31 @@ export class ScriptEngine {
         }
         context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: 选择最多 ${action.count} 个目标各贴 1 DON!!`)
         return true
+      }
+
+      case 'PENDING_SEARCH': {
+        // 检索效果：查看牌库顶部N张，选择符合条件的卡加入手牌
+        const player = context.getCurrentPlayer()
+        const count = action.count || 5
+        const actual = Math.min(count, player.deck.length)
+        
+        // 获取顶部卡牌 (deck末尾是顶部)
+        const topCards = player.deck.slice(-actual).reverse()
+        
+        // 设置待决效果
+        this.engine.pendingEffect = {
+          type: 'SEARCH',
+          cards: topCards.map(c => this.engine._sanitizeCard(c)),
+          viewedCount: actual,
+          maxSelect: action.maxSelect || 1,
+          filter: action.filter || {},
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard.cardNumber,
+          sourceCardName: context.sourceCard.nameCn || context.sourceCard.name,
+        }
+        
+        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: ${action.message || `检索顶部${actual}张`}`)
+        return { needsInteraction: true, type: 'SEARCH' }
       }
 
       case 'LOG': {

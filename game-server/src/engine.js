@@ -1199,16 +1199,57 @@ export class GameEngine {
     const player = this._getPlayer(socketId)
     if (!player) return { success: false, message: 'Player not found' }
 
-    if (selectedIds.length > 1) {
-      return { success: false, message: '只能选择1张卡加入手牌' }
+    // 获取检索效果的过滤条件（如果有）
+    const effect = this.pendingEffect
+    const filter = effect?.type === 'SEARCH' && effect?.playerId === socketId ? effect.filter : null
+    const maxSelect = effect?.maxSelect || 1
+
+    if (selectedIds.length > maxSelect) {
+      return { success: false, message: `最多只能选择${maxSelect}张卡加入手牌` }
     }
 
     // All IDs must be in the top of the deck
     const allIds = [...selectedIds, ...bottomIds]
-    const topCards = player.deck.slice(-allIds.length).map(c => c.instanceId)
+    const viewedCount = effect?.viewedCount || allIds.length
+    const topCards = player.deck.slice(-viewedCount)
+    const topCardIds = topCards.map(c => c.instanceId)
+    
     for (const id of allIds) {
-      if (!topCards.includes(id)) {
+      if (!topCardIds.includes(id)) {
         return { success: false, message: `Card ${id} not in viewed cards` }
+      }
+    }
+
+    // 验证选中的卡符合过滤条件
+    if (filter && selectedIds.length > 0) {
+      for (const id of selectedIds) {
+        const card = topCards.find(c => c.instanceId === id)
+        if (!card) continue
+
+        // 检查特征过滤
+        if (filter.trait) {
+          const cardTrait = card.trait || ''
+          if (!cardTrait.includes(filter.trait)) {
+            return { success: false, message: `选择的卡牌必须拥有《${filter.trait}》特征` }
+          }
+        }
+
+        // 检查排除的卡号
+        if (filter.excludeCardNumber) {
+          if (card.cardNumber === filter.excludeCardNumber) {
+            return { success: false, message: `不能选择此卡牌` }
+          }
+        }
+
+        // 检查颜色过滤
+        if (filter.color && card.color !== filter.color) {
+          return { success: false, message: `选择的卡牌必须是${filter.color}色` }
+        }
+
+        // 检查费用过滤
+        if (filter.maxCost !== undefined && (card.cost || 0) > filter.maxCost) {
+          return { success: false, message: `选择的卡牌费用不能超过${filter.maxCost}` }
+        }
       }
     }
 
@@ -1240,6 +1281,11 @@ export class GameEngine {
 
     if (bottomIds.length > 0) {
       this._log(`${player.name} puts ${bottomIds.length} card(s) to bottom of deck`)
+    }
+
+    // 清除检索效果
+    if (effect?.type === 'SEARCH' && effect?.playerId === socketId) {
+      this.pendingEffect = null
     }
 
     return { success: true }

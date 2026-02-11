@@ -115,4 +115,25 @@ export const CARD_SCRIPTS = {
     //   actions: [{ type: 'KO_CHARACTER', target: 'CHOOSE', filter: { maxPower: 3000 }, targetPlayer: 'opponent' }],
     // },
   ],
+
+  /**
+   * OP01-016 奈美 (Nami)
+   * ON_PLAY: 看牌组顶5张，检索1张非奈美的[草帽一伙]特征卡加入手牌
+   */
+  'OP01-016': {
+    triggerType: 'ON_PLAY',
+    conditions: [],
+    actions: [
+      {
+        type: 'PENDING_SEARCH',
+        count: 5,                    // 看顶部5张
+        maxSelect: 1,                // 最多选1张
+        filter: {
+          trait: '草帽一伙',         // 必须有草帽一伙特征
+          excludeCardNumber: 'OP01-016',  // 排除奈美自己
+        },
+        message: '选择1张非"奈美"的拥有《草帽一伙》特征的卡牌加入手牌',
+      },
+    ],
+  },
 }

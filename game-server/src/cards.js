@@ -111,6 +111,7 @@ export async function fetchDeckFromAPI(deckId) {
         counter: cardEntry.counter,
         effect: cardEntry.effect,
         trigger: cardEntry.trigger,
+        trait: cardEntry.trait,
         effectScript: cardEntry.effect_script,
         imageUrl: cardEntry.image_url,
       }

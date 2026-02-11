@@ -838,6 +838,20 @@
   border-color: #4ADE80;
   background: rgba(74,222,128,0.15);
 }
+.search-card.disabled {
+  cursor: not-allowed;
+  position: relative;
+}
+.search-card.disabled:hover {
+  background: rgba(26,26,34,0.6);
+}
+.search-card-disabled-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  pointer-events: none;
+}
 .search-card-name {
   font-size: 9px; color: #888;
   max-width: 80px; text-align: center;

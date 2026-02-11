@@ -180,6 +180,13 @@ export default function Game() {
   const [viewedCards, setViewedCards] = useState<Card[]>([])
   const [showSearchModal, setShowSearchModal] = useState(false)
   const [selectedSearchIds, setSelectedSearchIds] = useState<Set<string>>(new Set())
+  const [searchFilter, setSearchFilter] = useState<{
+    trait?: string
+    excludeCardNumber?: string
+    color?: string
+    maxCost?: number
+  } | null>(null)
+  const [searchSourceName, setSearchSourceName] = useState<string>('')
   // 墓地查看
   const [showTrashViewer, setShowTrashViewer] = useState<'mine' | 'opp' | null>(null)
   const [selectedTrashCardId, setSelectedTrashCardId] = useState<string | null>(null)
@@ -312,6 +319,8 @@ export default function Game() {
     const handleViewTopResult = (data: any) => {
       setViewedCards(data.cards)
       setSelectedSearchIds(new Set())
+      setSearchFilter(data.filter || null)
+      setSearchSourceName(data.sourceCardName || '')
       setShowSearchModal(true)
     }
 
@@ -810,19 +819,26 @@ export default function Game() {
     setShowSearchModal(false)
     setViewedCards([])
     setSelectedSearchIds(new Set())
+    setSearchFilter(null)
+    setSearchSourceName('')
     setHoveredCard(null)
     setPinnedPreviewId(null)
     setPreviewOrigin(null)
   }, [selectedSearchIds, viewedCards])
 
   const cancelSearch = useCallback(() => {
+    // 取消检索时也要把所有卡放回底部
+    const bottomIds = viewedCards.map(c => c.instanceId)
+    socketService.resolveSearch([], bottomIds)
     setShowSearchModal(false)
     setViewedCards([])
     setSelectedSearchIds(new Set())
+    setSearchFilter(null)
+    setSearchSourceName('')
     setHoveredCard(null)
     setPinnedPreviewId(null)
     setPreviewOrigin(null)
-  }, [])
+  }, [viewedCards])
 
   // Phase info
   const phaseHint = getPhaseHint(
@@ -851,6 +867,42 @@ export default function Game() {
     const effectText = card.effect.toLowerCase()
     return effectText.includes('blocker') || effectText.includes('阻挡')
   }, [])
+
+  // 检查卡牌是否通过检索过滤条件
+  const passesSearchFilter = useCallback((card: Card) => {
+    if (!searchFilter) return true
+    
+    // 检查特征
+    if (searchFilter.trait) {
+      const cardTrait = (card as any).trait || ''
+      if (!cardTrait.includes(searchFilter.trait)) {
+        return false
+      }
+    }
+    
+    // 检查排除的卡号
+    if (searchFilter.excludeCardNumber) {
+      if (card.cardNumber === searchFilter.excludeCardNumber) {
+        return false
+      }
+    }
+    
+    // 检查颜色
+    if (searchFilter.color) {
+      if ((card as any).color !== searchFilter.color) {
+        return false
+      }
+    }
+    
+    // 检查费用
+    if (searchFilter.maxCost !== undefined) {
+      if ((card.cost || 0) > searchFilter.maxCost) {
+        return false
+      }
+    }
+    
+    return true
+  }, [searchFilter])
 
   // ============ Render Board Side ============
   const renderBoard = (isOpp: boolean) => {
@@ -1710,29 +1762,38 @@ export default function Game() {
             }
             e.stopPropagation()
           }}>
-            <h2>🔍 牌顶检索</h2>
-            <p className="search-desc">可不选或选择1张加入手牌，其余放回牌组底部</p>
+            <h2>🔍 {searchSourceName ? `${searchSourceName} - 检索` : '牌顶检索'}</h2>
+            <p className="search-desc">
+              {searchFilter?.trait 
+                ? `选择1张拥有《${searchFilter.trait}》特征的卡牌加入手牌${searchFilter.excludeCardNumber ? '（灰色卡牌不可选）' : ''}` 
+                : '可不选或选择1张加入手牌'}，其余放回牌组底部
+            </p>
             <div className="search-cards">
-              {viewedCards.map(card => (
-                <div key={card.instanceId}
-                  className={`search-card ${selectedSearchIds.has(card.instanceId) ? 'selected' : ''}`}
-                  onClick={() => {
-                    setSelectedSearchIds(prev => {
-                      if (prev.has(card.instanceId)) return new Set()
-                      return new Set([card.instanceId])
-                    })
-                    handleClickPreview(card, undefined, 'other')
-                  }}>
-                  <CardComponent card={card} width={80} showPower onHover={(c, e) => handleHover(c, e)} />
-                  <div className="search-card-name">{card.nameCn || card.name}</div>
-                </div>
-              ))}
+              {viewedCards.map(card => {
+                const canSelect = passesSearchFilter(card)
+                return (
+                  <div key={card.instanceId}
+                    className={`search-card ${selectedSearchIds.has(card.instanceId) ? 'selected' : ''} ${!canSelect ? 'disabled' : ''}`}
+                    onClick={() => {
+                      if (!canSelect) return // 不符合条件的卡片不能选
+                      setSelectedSearchIds(prev => {
+                        if (prev.has(card.instanceId)) return new Set()
+                        return new Set([card.instanceId])
+                      })
+                      handleClickPreview(card, undefined, 'other')
+                    }}>
+                    <CardComponent card={card} width={80} showPower onHover={(c, e) => handleHover(c, e)} />
+                    <div className="search-card-name">{card.nameCn || card.name}</div>
+                    {!canSelect && <div className="search-card-disabled-overlay" />}
+                  </div>
+                )
+              })}
             </div>
             <div className="search-actions">
               <button className="btn btn-primary" onClick={confirmSearch}>
                 确认 ({selectedSearchIds.size === 0 ? '0' : '1'}张→手牌)
               </button>
-              <button className="btn btn-secondary" onClick={cancelSearch}>取消</button>
+              <button className="btn btn-secondary" onClick={cancelSearch}>不选择</button>
             </div>
           </div>
         </div>

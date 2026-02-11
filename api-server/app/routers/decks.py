@@ -79,6 +79,7 @@ async def get_deck(deck_id: str):
                     "counter": card.counter,
                     "effect": card.effect,
                     "trigger": card.trigger,
+                    "trait": card.trait,
                     "image_url": card.image_url,
                     "count": count,
                 })
@@ -100,6 +101,7 @@ async def get_deck(deck_id: str):
                     "life": leader_card.life,
                     "effect": leader_card.effect,
                     "trigger": leader_card.trigger,
+                    "trait": leader_card.trait,
                     "image_url": leader_card.image_url,
                 }
         

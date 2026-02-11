@@ -220,6 +220,17 @@ io.on('connection', (socket) => {
 
     const result = room.engine.playCharacter(socket.id, cardInstanceId)
     if (result.success) {
+      // 检查是否触发了检索效果
+      const effect = room.engine.pendingEffect
+      if (effect?.type === 'SEARCH' && effect.playerId === socket.id) {
+        // 发送检索弹窗数据给触发者
+        socket.emit('game:view-top-result', {
+          cards: effect.cards,
+          filter: effect.filter,
+          maxSelect: effect.maxSelect,
+          sourceCardName: effect.sourceCardName,
+        })
+      }
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
