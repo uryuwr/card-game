@@ -52,25 +52,70 @@ function getPhaseHint(
   }
 }
 
-// ============ Card size calculations ============
-function useCardSizes() {
-  const [vh, setVh] = useState(window.innerHeight)
-  const [vw, setVw] = useState(window.innerWidth)
+// ============ Card size calculations (REFACTORED) ============
+// Layout Strategy: Scale to Fit (Landscape) or Vertical (Portrait)
+// We detect orientation and provide appropriate constants.
+
+const DESIGN_WIDTH = 1260
+const DESIGN_HEIGHT = 880
+const MOBILE_DESIGN_WIDTH = 390
+const MOBILE_DESIGN_HEIGHT = 844
+
+function useScaledLayout() {
+  const [scale, setScale] = useState(1)
+  const [windowSize, setWindowSize] = useState({ vw: window.innerWidth, vh: window.innerHeight })
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth)
+
   useEffect(() => {
-    const onResize = () => { setVh(window.innerHeight); setVw(window.innerWidth) }
+    const onResize = () => {
+      const sw = window.innerWidth
+      const sh = window.innerHeight
+      const portrait = sh > sw
+      setWindowSize({ vw: sw, vh: sh })
+      setIsPortrait(portrait)
+
+      let s = 1
+      if (portrait) {
+        // Portrait Mode: Scale based on width primarily
+        s = Math.min(sw / MOBILE_DESIGN_WIDTH, sh / MOBILE_DESIGN_HEIGHT)
+      } else {
+        // Landscape Mode
+        s = Math.min(sw / DESIGN_WIDTH, sh / DESIGN_HEIGHT)
+      }
+      setScale(s)
+    }
     window.addEventListener('resize', onResize)
+    onResize()
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const boardH = Math.max(200, (vh - 250) / 2)
-  const midCardW = Math.max(52, Math.min(80, Math.floor(boardH * 0.38 / 1.4)))
-  const charCardW = Math.max(48, Math.min(72, midCardW - 4))
-  const handCardW = Math.max(56, Math.min(74, midCardW))
-  const lifeCardW = Math.max(28, Math.min(40, midCardW * 0.5))
-  const donCardW = Math.max(24, Math.min(34, midCardW * 0.4))
-  const previewW = Math.min(200, vw * 0.25)
+  // Fixed sizes for 1280x880 design (Landscape)
+  const landSizes = {
+    // 之前 boardH=340 太小了，midCardW=86 太大了
+    // 整个画板高度880px - (顶部36 + 对手手牌48 + 我方手牌区域120 + 费用40*2) ≈ 600px 剩余给棋盘
+    // 600px / 2 = 300px 半场高度。
+    // 但是现在的 params 设的是 boardH=340，其实已经撑满了。
+    // 关键修正：调小卡牌基准尺寸，让它们能塞进 340px 的高度里而不溢出。
+    boardH: 340, 
+    midCardW: 64,   // Reduced from 86 -> 64 (约缩小25%)
+    charCardW: 64,  // Reduced from 86 -> 64
+    handCardW: 80,  // Reduced from 100 -> 80
+    lifeCardW: 36,  // Reduced from 45 -> 36
+    donCardW: 32,   // Reduced from 40 -> 32
+    previewW: 280,
+    designW: DESIGN_WIDTH, designH: DESIGN_HEIGHT
+  }
+  
+  // Fixed sizes for 390x844 design (Portrait)
+  // Vertical layout needs smaller cards to fit width
+  const portSizes = {
+    boardH: 260, midCardW: 56, charCardW: 56, handCardW: 64, lifeCardW: 32, donCardW: 28, previewW: 240,
+    designW: MOBILE_DESIGN_WIDTH, designH: MOBILE_DESIGN_HEIGHT
+  }
 
-  return { midCardW, charCardW, handCardW, lifeCardW, donCardW, previewW, boardH, vw, vh }
+  const current = isPortrait ? portSizes : landSizes
+
+  return { scale, ...current, vw: windowSize.vw, vh: windowSize.vh, isPortrait }
 }
 
 // ============ MAIN COMPONENT ============
@@ -81,7 +126,7 @@ export default function Game() {
   const isMyTurn = useIsMyTurn()
   useCanPlayCard()
   const isDefending = useIsDefending()
-  const sizes = useCardSizes()
+  const sizes = useScaledLayout()
 
   // UI state
   const [hoveredCard, setHoveredCard] = useState<Card | null>(null)
@@ -1008,6 +1053,17 @@ export default function Game() {
         }
       }}
     >
+      <div className="game-scaler" style={{
+        width: sizes.designW, height: sizes.designH,
+        transform: `scale(${sizes.scale})`,
+        transformOrigin: '50% 50%',
+        position: 'absolute',
+        left: '50%', top: '50%',
+        marginLeft: -sizes.designW / 2, marginTop: -sizes.designH / 2,
+        backgroundColor: '#0c0c10',
+        boxShadow: '0 0 50px rgba(0,0,0,0.5)',
+        display: 'flex', flexDirection: 'column'
+      }}>
 
       {/* ═══ PHASE BAR ═══ */}
       <div className="phase-bar">
@@ -1160,6 +1216,7 @@ export default function Game() {
             )
           })}
         </div>
+      </div>
       </div>
 
       {zoneActionMenu && (

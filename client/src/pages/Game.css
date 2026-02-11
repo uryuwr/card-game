@@ -14,7 +14,19 @@
   user-select: none; overflow: hidden;
 }
 
-/* ============ PHASE BAR (top strip) ============ */
+/* Mobile Portrait Tweaks */
+@media (orientation: portrait) {
+  .game-root .char-row {
+    flex-wrap: wrap; 
+    gap: 2px;
+  }
+  .game-root .cost-area {
+    min-height: 28px;
+  }
+  .game-root .hand-card {
+    margin-left: -20px !important; /* Tighter overlap */
+  }
+}
 .phase-bar {
   height: 36px; flex-shrink: 0;
   background: linear-gradient(180deg, #18181c, #0f0f13);
@@ -93,6 +105,10 @@
 /* Opponent board: rows reversed (cost on top, char on bottom) */
 .opp-board {
   flex-direction: column-reverse;
+  justify-content: flex-end; /* Push content towards top (away from center) */
+}
+.plr-board {
+  justify-content: flex-end; /* Push content towards bottom (away from center) */
 }
 
 /* --- Board Row --- */
@@ -164,9 +180,10 @@
 .life-card-wrap:first-child { margin-left: 0; }
 
 .leader-zone {
-  min-width: 90px;
-  min-height: 130px;
-  padding: 6px 8px;
+  min-width: 60px; /* Reduced from 90px */
+  /* min-height removed to allow vertical shrinking */
+  padding: 4px;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .stage-zone {
