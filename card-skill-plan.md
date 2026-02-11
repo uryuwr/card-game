@@ -3,97 +3,205 @@
 ## 🎯 总体目标
 完善游戏引擎以支持「白胡子」和「红索隆」两套主流卡组的完整对战体验。
 
-## 📊 待办事项概览
+## ✅ 已实现功能审计 (2026-02-08 更新)
+
+> 以下是对照代码库实际实现后的审计结果。引擎采用"半自动"模式：核心游戏流程自动化，卡牌效果通过通用工具操作（Utility Actions）手动执行。
+
+### 引擎层已实现的通用工具操作 (`engine.js`)
+
+| 工具方法 | Socket 事件 | 用途 | 对应卡牌效果 |
+|:---|:---|:---|:---|
+| `viewTopDeck(count)` | `game:view-top-deck` | 查看牌顶N张 | 检索类 (伊佐/奈美) |
+| `resolveSearch(selected, bottom)` | `game:resolve-search` | 选1张入手，其余沉底 | 检索类 (伊佐/奈美) |
+| `searchDeckFiltered(filter)` | `game:search-deck` | 按条件(特征/费用/颜色/类型)过滤全牌组 | 通用检索 |
+| `pickFromDeck(cardInstanceId)` | `game:pick-from-deck` | 从牌组选牌入手并洗牌 | 通用检索 |
+| `lifeToHand(lifeIndex)` | `game:life-to-hand` | 生命区→手牌 | 白胡子领袖效果 |
+| `trashToLife(cardInstanceId)` | `game:trash-to-life` | 弃牌区→生命区 | 特殊恢复效果 |
+| `recoverFromTrash(cardInstanceId)` | `game:recover-trash` | 弃牌区→手牌 | 乔巴/马尔高回收 |
+| `playFromTrash(cardInstanceId, state)` | `game:play-from-trash` | 弃牌区→场上登场 | 马尔高复活 |
+| `koTarget(playerId, instanceId)` | `game:ko-target` | KO对方角色 | 火拳枪/橡胶火箭炮 |
+| `bounceToHand(playerId, instanceId)` | `game:bounce-hand` | 弹回手牌 | 弹手牌效果 |
+| `bounceToBottom(playerId, instanceId)` | `game:bounce-bottom` | 放回牌底 | 弹牌底效果 |
+| `modifyPower(targetId, delta)` | `game:modify-power` | 临时战力修改(回合结束清除) | 反击/Buff/Debuff |
+| `trashFromHand(cardInstanceId)` | `game:trash-from-hand` | 手牌→弃牌区 | 弃牌费用 |
+| `drawCards(count)` | `game:draw-cards` | 抽牌效果 | 各种抽牌效果 |
+| `restTarget(targetId)` | `game:rest-target` | 横置目标 | 控制效果 |
+| `activateTarget(targetId)` | `game:activate-target` | 竖置目标 | 唤醒效果 |
+| `moveDon(direction, count)` | `game:move-don` | DON横/竖转换 | DON操作 |
+| `attachDon(targetId, count)` | `game:attach-don` | 贴DON | 标准操作 |
+| `detachDon(sourceId, count)` | `game:detach-don` | 取下DON | 标准操作 |
+| `setEffectRestriction(key, value)` | `game:set-effect-restriction` | 设置效果限制 | OP02-004禁生命入手 |
+
+### 前端 UI 已实现的交互组件 (`Game.tsx`)
+
+| 组件/功能 | 状态 | 说明 |
+|:---|:---:|:---|
+| **检索弹窗 (Search Modal)** | ✅ | `viewTopDeck(5)` → 弹窗展示5张 → 选0~1张入手 → `resolveSearch()` |
+| **墓地查看器 (Trash Viewer)** | ✅ | 展示自己/对手墓地，支持选中卡牌 + 回收/登场操作 |
+| **牌组操作菜单 (Zone Actions)** | ✅ | 牌组区：抽1张、查看牌顶5张；生命区：生命→手牌 |
+| **战力调整弹窗** | ✅ | ±1000 步进调整，支持 `modifyPower` |
+| **反击选择** | ✅ | 多张反击牌选择 + 手动战力补正 |
+| **领袖效果确认弹窗** | ✅ | 白胡子回合结束时弹窗确认（但当前引擎已改为自动执行） |
+| **轮盘菜单 (RadialMenu)** | ✅ | 角色/领袖右键菜单：攻击、返回手牌等 |
+
+---
+
+## 📊 卡牌效果实现状态
 
 ### Phase 1: 核心机制扩展 (Engine & UI)
-这些是支持具体卡牌效果的基础设施。
 
-- [ ] **检索机制 (Search)**: 支持"查看卡组顶X张，选择特定特征卡牌加入手牌，其余沉底"。
-  - *涉及卡牌*: OP03-003 伊佐, OP01-016 奈美, EB01-009 少啰唆
-- [ ] **弃牌区互动 (Trash Interaction)**: 支持从弃牌区回收卡牌或从弃牌区登场。
-  - *涉及卡牌*: OP01-015 乔巴, OP03-013 马尔高
-- [ ] **生命区互动 (Life Interaction)**: 支持生命卡加入手牌、查看生命卡。
-  - *涉及卡牌*: OP02-001 白胡子领袖, OP01-013 山智, OP01-029 离子光波
-- [ ] **咚!!操作 (Don Manipulation)**: 支持"赋予休息状态的咚!!给角色"。
-  - *涉及卡牌*: ST01-011 布鲁克, OP01-013 山智
-- [ ] **多目标选择 (Target Selection)**: UI需要支持根据效果条件（如力量<3000）筛选合法目标。
+- [x] **检索机制 (Search)** ✅ 已完成
+  - 引擎: `viewTopDeck()` + `resolveSearch()` 全链路 (engine.js:1072-1136)
+  - 引擎: `searchDeckFiltered()` + `pickFromDeck()` 按条件过滤检索 (engine.js:1196-1240)
+  - 前端: 检索弹窗 UI + 选牌交互 (Game.tsx:1447-1484)
+  - Socket: `VIEW_TOP_DECK`/`RESOLVE_SEARCH`/`SEARCH_DECK`/`PICK_FROM_DECK` 事件已注册
+  - **可复用**: 伊佐/奈美的"看5选1"可直接用 `viewTopDeck(5)` → Search Modal → `resolveSearch()`
+  - **待完善**: 检索弹窗目前不做trait过滤（如"白胡子海盗团"/"草帽一伙"），选牌全靠玩家自律
+- [x] **弃牌区互动 (Trash Interaction)** ✅ 已完成
+  - 引擎: `recoverFromTrash()` (弃牌→手牌), `playFromTrash()` (弃牌→场上) (engine.js:950-994)
+  - 前端: 墓地查看器 + 选中卡操作
+  - **可复用**: 乔巴的回收 / 马尔高的复活可直接调用
+- [x] **生命区互动 (Life Interaction)** ✅ 已完成
+  - 引擎: `lifeToHand()` 生命→手牌 (engine.js:1142-1161)
+  - 引擎: `trashToLife()` 弃牌→生命区 (engine.js:1245-1257)
+  - 引擎: `effectRestrictions.cannotLifeToHand` 禁止限制 (engine.js:103-106)
+  - 前端: 锁区操作菜单 "生命→手牌"
+- [ ] **咚!!操作 (Don Manipulation)** ⚠️ 部分实现
+  - ✅ `attachDon(targetId, count)` 已支持贴DON
+  - ✅ `detachDon(sourceId, count)` 已支持取DON  
+  - ✅ `moveDon(direction, count)` 已支持横/竖转换
+  - ❌ 尚未支持"将休息状态的DON贴给角色"（布鲁克ST01-011效果）
+  - 当前 `attachDon` 优先使用活跃DON，不足时才用休息DON，但逻辑已支持从rested area扣除
+  - **评估**: 实际上当前 `attachDon` 已能处理，先用 active 不够再用 rested，基本满足布鲁克效果
+- [ ] **多目标选择 (Target Selection)** ❌ 未实现
+  - 需要根据条件（如力量<3000）筛选场上合法目标的 UI
+  - 当前轮盘菜单仅支持单目标操作，无"选择N个目标"交互
 
-### Phase 2: 白胡子卡组 (White Beard) 实现
+### Phase 2: 白胡子卡组 (White Beard) — 实现状态
 
-> **特点**: 高力量大身板、操控生命值、无视阻挡
-
-| 优先级 | 卡号 | 名称 | 技能类型 | 实现逻辑 | 引导/约束 |
+| 状态 | 卡号 | 名称 | 技能类型 | 实现情况 | 备注 |
 |:---:|:---|:---|:---|:---|:---|
-| **P0** | **OP02-001** | **爱德华·纽哥特** | [回合结束时] | 自动触发：回合结束阶段强制将生命区顶卡加入手牌 | 只有生命值>0时触发 |
-| P0 | OP03-003 | 伊佐 | [登场时] | 检索：看5张找<白胡子海盗团> | 弹窗展示5张卡，仅允许选择符合条件的卡 |
-| P0 | OP02-004 | 爱德华·纽哥特 | [登场时] | Buff：领袖+2000直到下回合；Debuff：玩家不能拿生命卡 | 需添加 `effectRestrictions` 状态 |
-| P1 | OP02-013 | 艾斯 | [登场时] | 减益：2个角色-3000；条件速攻 | Step1: 选2个目标; Step2: 检查领袖特征赋予速攻 |
-| P1 | OP03-013 | 马尔高 | [登场时]/[KO时] | 登场KO小怪；KO时弃事件复活 | KO时弹窗询问是否弃牌复活 |
-| P1 | OP01-029 | 离子光波 | [反击] | 条件Buff：生命<=2时额外+2000 | 自动检测生命值计算加成 |
-| P1 | ST01-012 | 路飞 | [启动主要] | 无视阻挡 | 给自身添加 `ignoreBlocker: true` 状态 |
+| ✅ | **OP02-001** | **爱德华·纽哥特** | [回合结束时] | **已实现** — `_runEndPhase()` 自动触发 | 引擎硬编码，回合结束自动将生命顶牌入手；受 `cannotLifeToHand` 限制 |
+| ✅ | OP02-004 | 爱德华·纽哥特 | [登场时] | **部分实现** — 登场自动设 `cannotLifeToHand=true` | ❌ 领袖+2000战力 buff 需玩家手动 `modifyPower` |
+| 🔧 | OP03-003 | 伊佐 | [登场时] | **可复用** — `viewTopDeck(5)` → Search Modal | ❌ 缺少特征过滤（应限"白胡子海盗团"） |
+| 🔧 | OP01-015 | 乔巴 | [登场时] | **可复用** — `recoverFromTrash()` | 手动操作即可 |
+| 🔧 | OP03-013 | 马尔高 | [登场时]/[KO时] | **部分可复用** — 登场KO用 `koTarget`；复活用 `playFromTrash` | ❌ 缺 KO 触发时的弹窗询问（"是否弃事件复活"），需 AutoTriggerPrompt |
+| 🔧 | OP01-029 | 离子光波 | [反击] | **可复用** — 反击时 `modifyPower(targetId, +2000/+4000)` | 条件（生命≤2）需玩家自行判断 |
+| 🔧 | ST01-012 | 路飞 | [启动主要] | **部分可复用** — 效果"无视阻挡"无对应状态 | ❌ 引擎无 `ignoreBlocker` 状态；当前阻挡检查在 `declareAttack` 中 |
+| 🔧 | OP01-013 | 山智 | [登场时] | **手动可行** — `lifeToHand` + `attachDon(rested)` | 需手动组合操作 |
 
-### Phase 3: 红索隆卡组 (Red Zoro) 实现
+### Phase 3: 红索隆卡组 (Red Zoro) — 实现状态
 
-> **特点**: 快攻 (Rush)、全场Buff、低费铺场
-
-| 优先级 | 卡号 | 名称 | 技能类型 | 实现逻辑 | 引导/约束 |
+| 状态 | 卡号 | 名称 | 技能类型 | 实现情况 | 备注 |
 |:---:|:---|:---|:---|:---|:---|
-| **P0** | **OP01-001** | **罗罗诺亚·佐罗** | [常驻效果] | 贴1咚时全场+1000 | 在 `calculatePower` 中加入全局光环检查 |
-| P0 | OP01-016 | 奈美 | [登场时] | 检索：看5张找<草帽一伙> | 弹窗展示5张卡，过滤条件同伊佐 |
-| P0 | OP01-025 | 佐罗 | [速攻] | 关键词：Rush | 现有引擎已支持，需验证 |
-| P1 | ST01-016 | 恶魔风脚 | [主要] | 指定单位本回合无视阻挡 | 选择友方单位 -> 赋予状态 |
-| P1 | OP01-026 | 火拳枪 | [反击] | Buff + KO | 步骤1加战力 -> 步骤2选对方怪KO |
-| P2 | EB01-003 | 基德&基拉 | [攻击时] | 条件Buff：对手生命<=2时+2000 | 攻击宣言时检查对手生命值 |
+| ✅ | **OP01-001** | **罗罗诺亚·佐罗** | [常驻效果] | **已实现** — `_calculatePower()` 全局光环检查 | 贴1咚时我方回合所有角色+1000 |
+| 🔧 | OP01-016 | 奈美 | [登场时] | **可复用** — 同伊佐 `viewTopDeck(5)` | ❌ 缺特征过滤（应限"草帽一伙"） |
+| ✅ | OP01-025 | 佐罗 | [速攻] | **已实现** — `_hasKeyword(Rush)` + `canAttackThisTurn=true` | 引擎已支持 Rush 关键词 |
+| 🔧 | ST01-016 | 恶魔风脚 | [主要] | **部分可行** — 无 `ignoreBlocker` 状态 | ❌ 同路飞，需新增引擎状态 |
+| 🔧 | OP01-026 | 火拳枪 | [反击] | **可复用** — `modifyPower` + `koTarget` 组合 | 需手动两步操作 |
+| 🔧 | EB01-003 | 基德&基拉 | [攻击时] | **可复用** — `modifyPower(+2000)` | 条件（对手生命≤2）需玩家自行判断 |
+| 🔧 | OP02-013 | 艾斯 | [登场时] | **部分可行** — `modifyPower(targetId, -3000)` × 2 | ❌ 缺多目标选择 UI + 条件速攻 |
 
 ---
 
-## 🛠 开发详细设计
+## 🛠 仍需开发的功能
 
-### 1. Game Engine (`game-server/src/engine.js`)
+### 优先级 P0: 检索条件过滤增强
 
-#### 新增 Action Types
-我们需要在 `playCharacter`, `playEvent` 等基础动作之外，增加更细粒度的效果执行动作。
+当前检索通过 `viewTopDeck(5)` 展示全部5张让玩家自选，**没有按特征/费用做前端过滤高亮或限制**。
 
-- `resolveEffect(socketId, { cardId, effectId, targets: [] })`: 通用效果结算
-- `searchDeck(socketId, { amount, filter })`: 检索卡组
-- `manipulateLife(socketId, { action, count })`: 生命区操作
+**方案A (推荐)**: 前端检索弹窗增加 `filter` prop，将不符合条件的卡标灰/禁选
+- 伊佐: `filter = { trait: '白胡子海盗团' }`
+- 奈美: `filter = { trait: '草帽一伙' }`
+- 引擎 `viewTopDeck` 已返回完整卡牌数据（含 trait 字段），前端只需加高亮/禁用逻辑
 
-#### 状态扩展
-在 `player` 对象中增加：
+**方案B**: 服务端 `resolveSearch` 增加校验（不符合条件的拒绝加入手牌）
+
+### 优先级 P1: ignoreBlocker 状态
+
 ```javascript
-player.effectRestrictions = {
-  cannotLifeToHand: false, // 9费白胡子效果
-  cannotActiveBlocker: false // 路飞/恶魔风脚效果
+// engine.js - 角色状态扩展
+player.characters.push({
+  card, attachedDon: 0, state: 'active',
+  canAttackThisTurn: false,
+  ignoreBlocker: false, // NEW: 无视阻挡状态
+})
+
+// declareAttack 中检查
+if (attackerSlot.ignoreBlocker) {
+  // 跳过 BLOCK 步骤，直接进入 COUNTER
+  this.battleStep = BATTLE_STEPS.COUNTER
 }
 ```
 
-### 2. Client UI (`client/src/pages/Game.tsx`)
+涉及卡牌: ST01-012 路飞 (`[启动主要]` 赋予自身)、ST01-016 恶魔风脚 (事件卡赋予指定友方)
 
-#### 新增交互弹窗
-- **CardSelectorModal**: 用于检索效果（看5选1）。
-  - Props: `cards: Card[]`, `filter: (c) => boolean`, `onSelect: (c) => void`
-- **EffectTargetModal**: 用于需要主动选择目标的效果（如艾斯选2个对手角色减攻）。
-  - 允许选择场上的角色卡，支持最大选择数量限制。
-- **AutoTriggerPrompt**: 触发式效果询问（如马尔高复活）。
-  - "马尔高将会被KO，是否丢弃一张事件卡使其复活？" [是] [否]
+### 优先级 P1: 多目标选择 UI
 
-### 3. Socket Events (`shared/constants.js`)
+艾斯(OP02-013)需要选择2个对手角色各-3000。需要一个 `TargetSelector` 组件：
+- 高亮对手场上所有合法目标
+- 支持选择数量限制 (maxTargets: 2)
+- 选中后执行 `modifyPower` 批量操作
 
-新增事件通讯：
-```javascript
-SOCKET_EVENTS: {
-  // ... existing
-  EFFECT_TRIGGERED: 'game:effect-triggered', // 服务端通知客户端有效果待处理（如检索）
-  RESOLVE_EFFECT: 'game:resolve-effect',     // 客户端提交效果处理结果（如选了哪张牌）
-  SHOW_SELECTION_MODAL: 'ui:show-selection',  // 要求前端显示选牌/选目标弹窗
-}
+### 优先级 P2: KO触发效果弹窗
+
+马尔高(OP03-013)需要在被KO时弹窗询问"是否弃一张事件卡来复活"。需要:
+- 引擎在 KO 时检查被KO卡的效果文本
+- 发送 `game:ko-trigger-prompt` 事件给拥有者
+- 前端弹窗展示手牌中的事件卡供选择
+
+---
+
+## 🗂 已有代码可复用清单
+
+### 1. 检索效果 — 两种模式
+
+#### 模式A: "看顶N张选1" (伊佐/奈美适用)
+```
+客户端: socketService.viewTopDeck(5)
+服务端: engine.viewTopDeck(socketId, 5) → 返回5张卡 
+        → socket.emit('game:view-top-result', { cards })
+客户端: 弹出 Search Modal → 选0~1张
+        → socketService.resolveSearch(selectedIds, bottomIds)
+服务端: engine.resolveSearch() → 选中入手，其余沉底
+```
+
+#### 模式B: "整副牌组按条件搜" (通用检索)
+```
+客户端: socketService.searchDeck({ trait: '白胡子海盗团' })
+服务端: engine.searchDeckFiltered(socketId, filter) → 返回匹配卡
+        → socket.emit('game:search-result', { cards })
+客户端: (需实现) 展示匹配卡列表
+        → socketService.pickFromDeck(cardInstanceId) → 入手并洗牌
+```
+
+### 2. 弃牌区操作链
+```
+查看墓地 → Trash Viewer UI (已有)
+回收到手牌 → socketService.recoverFromTrash(cardInstanceId)
+弃牌区登场 → socketService.playFromTrash(cardInstanceId, 'active'|'rested')
+```
+
+### 3. 战力修改
+```
+Buff:  socketService.powerBoost(targetId, +2000)
+Debuff: socketService.powerBoost(targetId, -3000)
+均通过 modifyPower 实现，回合结束自动清除
+```
+
+### 4. 生命区操作  
+```
+生命→手牌: socketService.lifeToHand(0)  // 取最上方
+弃牌→生命: socketService.trashToLife(cardInstanceId)
 ```
 
 ---
 
-## 📝 下一步执行计划
+## 📝 下一步执行计划 (修订版)
 
-1. **实现领袖效果 (P0)**: 优先完成 OP02-001 白胡子 (回合结束拿血) 和 OP01-001 索隆 (全场Buff)。
-2. **构建通用检索系统 (P0)**: 完成奈美/伊佐的 "看5选1" 逻辑，这是两套牌运转的核心。
-3. **实现核心事件卡 (P1)**: 恶魔风脚、反礼仪踢技等基础攻防卡。
-4. **完善高费大哥卡 (P1)**: 9费白胡子、7费艾斯的复杂登场效果。
+1. ~~**实现领袖效果 (P0)**~~ ✅ 白胡子 OP02-001 + 索隆 OP01-001 已完成
+2. ~~**构建通用检索系统 (P0)**~~ ✅ viewTopDeck + resolveSearch + Search Modal 已完成
+3. **增强检索弹窗 (P0)**: 为 Search Modal 添加 trait 过滤高亮/禁选，使伊佐/奈美效果有规则约束
+4. **实现 ignoreBlocker (P1)**: 角色状态扩展 + declareAttack 逻辑分支，支持路飞/恶魔风脚
+5. **实现多目标选择 UI (P1)**: 为艾斯(OP02-013)等需要选多目标的效果构建 TargetSelector 组件
+6. **实现 KO 触发弹窗 (P2)**: 为马尔高(OP03-013)等有on-KO效果的卡实现触发询问机制
