@@ -9,7 +9,7 @@ from app.models import Card
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("")
 async def list_cards(
     color: Optional[str] = None,
     card_type: Optional[str] = None,

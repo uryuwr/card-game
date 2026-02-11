@@ -39,7 +39,7 @@ async function fetchCardsFromAPI() {
 
   try {
     const API_URL = process.env.API_URL || 'http://127.0.0.1:8000'
-    const response = await fetch(`${API_URL}/api/cards/?limit=1000`)
+    const response = await fetch(`${API_URL}/api/cards?limit=1000`)
     
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`)

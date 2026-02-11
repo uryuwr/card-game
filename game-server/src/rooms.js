@@ -339,7 +339,7 @@ export class RoomManager {
     const [player1, player2] = this.matchmakingQueue.splice(0, 2)
     
     // Create room for matched players
-    const room = this.createRoom(player1.socketId, player1.name, player1.deckId)
+    const { room } = this.createRoom(player1.socketId, player1.name, player1.deckId)
     this.joinRoom(room.id, player2.socketId, player2.name, player2.deckId)
     
     // Auto-ready both players

@@ -201,6 +201,10 @@ export default function Game() {
     if (!socket) { navigate('/lobby'); return }
 
     const handleGameStart = (data: any) => {
+      // Save token if provided
+      if (data.userId) {
+        socketService.saveToken(data.userId)
+      }
       // 显示骰子结果
       if (data.diceRolls && data.players?.length === 2) {
         const me = data.players.find((p: any) => p.isSelf)
@@ -276,7 +280,7 @@ export default function Game() {
         type: 'GAME_SYNC', 
         roomId: data.roomId, 
         state: {
-          gamePhase: data.gamePhase,
+          gamePhase: data.phase,
           battleStep: data.battleStep,
           turnNumber: data.turnNumber,
           currentTurn: data.currentTurn,
@@ -289,6 +293,8 @@ export default function Game() {
     
     const handleRejoinFailed = (data: any) => {
       console.error('[Game] Rejoin failed:', data.message)
+      // Clear stale token to prevent infinite rejoin loop
+      socketService.clearToken()
       dispatch({ type: 'SET_ERROR', error: '重连失败: ' + data.message })
       navigate('/lobby')
     }
@@ -309,6 +315,18 @@ export default function Game() {
         }
     }
 
+    // When socket reconnects (new socket ID), re-associate with the game via token
+    const handleReconnect = () => {
+      console.log('[Game] Socket reconnected, attempting to rejoin game...')
+      const token = socketService.getToken()
+      if (token) {
+        socketService.rejoinGame(token)
+      } else {
+        console.warn('[Game] No token on reconnect, returning to lobby')
+        navigate('/lobby')
+      }
+    }
+
     socket.on('game:start', handleGameStart)
     socket.on('game:update', handleGameUpdate)
     socket.on('game:sync', handleGameSync)
@@ -320,14 +338,23 @@ export default function Game() {
     socket.on('error', handleError)
     socket.on('game:leader-effect-prompt', handleLeaderEffectPrompt)
     socket.on('game:view-top-result', handleViewTopResult)
+    socket.on('connect', handleReconnect)
     
-    // Auto Rejoin if no state but token exists
-    if (!state.player) {
-       const token = socketService.getToken()
-       if (token) {
-         console.log('[Game] No local state, attempting rejoin with token:', token)
-         socketService.rejoinGame(token)
-       }
+    // Auto Rejoin on mount:
+    // If we already have player state (navigated from Lobby after game:start), no rejoin needed.
+    // If no player state but token exists, attempt rejoin (page refresh scenario).
+    // If neither, go back to lobby.
+    if (state.player) {
+      console.log('[Game] Already have player state, no rejoin needed')
+    } else {
+      const token = socketService.getToken()
+      if (token) {
+        console.log('[Game] No local state, attempting rejoin with token:', token)
+        socketService.rejoinGame(token)
+      } else {
+        console.warn('[Game] No token available, returning to lobby')
+        navigate('/lobby')
+      }
     }
 
     return () => {
@@ -342,8 +369,10 @@ export default function Game() {
       socket.off('error', handleError)
       socket.off('game:leader-effect-prompt', handleLeaderEffectPrompt)
       socket.off('game:view-top-result', handleViewTopResult)
+      socket.off('connect', handleReconnect)
     }
-  }, [dispatch, navigate, state.player])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, navigate])
 
   // ============ Error Auto-Dismiss ============
   useEffect(() => {

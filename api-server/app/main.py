@@ -19,7 +19,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ONE PIECE CARD GAME API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(
+    title="ONE PIECE CARD GAME API",
+    version="0.2.0",
+    lifespan=lifespan,
+    redirect_slashes=False,
+)
 
 # CORS 配置
 app.add_middleware(

@@ -169,14 +169,15 @@ io.on('connection', (socket) => {
     
     if (result.matched) {
       const room = result.room
-      // Notify both players
-      for (const player of result.players) {
-        const playerSocket = io.sockets.sockets.get(player.socketId)
+      // Notify both players (with their userId for token saving)
+      for (const roomPlayer of room.players) {
+        const playerSocket = io.sockets.sockets.get(roomPlayer.socketId)
         if (playerSocket) {
           playerSocket.join(room.id)
           playerSocket.emit(SOCKET_EVENTS.MATCHMAKING_FOUND, { 
             roomId: room.id,
             room: sanitizeRoom(room),
+            userId: roomPlayer.userId,
           })
         }
       }
@@ -655,7 +656,7 @@ async function startGame(room) {
     room.players.forEach((player) => {
       console.log(`[DEBUG] Broadcasting to ${player.socketId}...`)
       const state = engine.getStateForPlayer(player.socketId)
-      io.to(player.socketId).emit(SOCKET_EVENTS.GAME_START, { roomId: room.id, ...state })
+      io.to(player.socketId).emit(SOCKET_EVENTS.GAME_START, { roomId: room.id, userId: player.userId, ...state })
       console.log(`[DEBUG] Sent GAME_START to ${player.socketId}`)
     })
     

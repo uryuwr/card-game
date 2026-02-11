@@ -57,9 +57,56 @@ export default function Lobby() {
     }
   }, [playerName])
 
-  // Socket event handlers
+  // Connect to server & manage connection lifecycle (runs FIRST, once on mount)
   useEffect(() => {
-    const socket = socketService.connect()
+    // Force fresh connection when entering lobby to avoid stale socket issues
+    const socket = socketService.forceReconnect()
+    // Clear stale game token from previous sessions
+    socketService.clearToken()
+    // Reset game state
+    dispatch({ type: 'RESET' })
+    
+    if (socket?.connected) {
+      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connected' })
+      dispatch({ type: 'SET_PHASE', phase: 'lobby' })
+    } else {
+      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connecting' })
+    }
+
+    const handleConnect = () => {
+      console.log('[Lobby] Socket connected!')
+      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connected' })
+      dispatch({ type: 'SET_PHASE', phase: 'lobby' })
+    }
+
+    const handleDisconnect = () => {
+      console.log('[Lobby] Socket disconnected!')
+      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'disconnected' })
+    }
+
+    const handleConnectError = (err: Error) => {
+      console.error('[Lobby] Socket connect error:', err.message)
+      // After all reconnection attempts fail, socket.active becomes false
+      if (!socket?.active) {
+        dispatch({ type: 'SET_CONNECTION_STATUS', status: 'disconnected' })
+        dispatch({ type: 'SET_ERROR', error: '无法连接到游戏服务器，请确认服务器已启动' })
+      }
+    }
+
+    socket?.on('connect', handleConnect)
+    socket?.on('disconnect', handleDisconnect)
+    socket?.on('connect_error', handleConnectError)
+
+    return () => {
+      socket?.off('connect', handleConnect)
+      socket?.off('disconnect', handleDisconnect)
+      socket?.off('connect_error', handleConnectError)
+    }
+  }, [dispatch])
+
+  // Socket event handlers (re-registers on roomId/mode changes)
+  useEffect(() => {
+    const socket = socketService.getSocket()
     if (!socket) return
 
     const handleRoomCreated = (data: any) => {
@@ -90,10 +137,27 @@ export default function Lobby() {
 
     const handleGameStart = (data: any) => {
       console.log('[Lobby] game:start received:', data)
-      console.log('[Lobby] state.roomId:', state.roomId)
+      // Save token if provided (matchmaking flow)
+      if (data.userId) {
+        socketService.saveToken(data.userId)
+        console.log('[Lobby] Game start token saved:', data.userId)
+      }
+      // Dispatch GAME_START to populate context BEFORE navigating,
+      // so Game.tsx has player state on mount and doesn't need rejoin
+      if (data.players) {
+        dispatch({
+          type: 'GAME_START',
+          player: data.players.find((p: any) => p.isSelf),
+          opponent: data.players.find((p: any) => !p.isSelf),
+          phase: data.phase,
+          turnNumber: data.turnNumber,
+          currentTurn: data.currentTurn,
+        })
+      }
       const gameRoomId = data.roomId || state.roomId
       console.log('[Lobby] navigating to:', `/game/${gameRoomId}`)
       if (gameRoomId) {
+        dispatch({ type: 'SET_ROOM', roomId: gameRoomId, room: state.room || { id: gameRoomId, status: 'playing', players: [], createdAt: Date.now() } })
         navigate(`/game/${gameRoomId}`)
       } else {
         console.error('No roomId available for game start')
@@ -106,6 +170,10 @@ export default function Lobby() {
     }
 
     const handleMatchmakingFound = (data: any) => {
+      if (data.userId) {
+        socketService.saveToken(data.userId)
+        console.log('[Lobby] Matchmaking token saved:', data.userId)
+      }
       dispatch({ type: 'SET_ROOM', roomId: data.roomId, room: data.room })
       // Game will start automatically
     }
@@ -150,37 +218,6 @@ export default function Lobby() {
       clearInterval(interval)
     }
   }, [dispatch, navigate, state.roomId, mode])
-
-  // Connect to server on mount
-  useEffect(() => {
-    const socket = socketService.connect()
-    
-    if (socket?.connected) {
-      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connected' })
-      dispatch({ type: 'SET_PHASE', phase: 'lobby' })
-    } else {
-      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connecting' })
-    }
-
-    const handleConnect = () => {
-      console.log('[Lobby] Socket connected!')
-      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'connected' })
-      dispatch({ type: 'SET_PHASE', phase: 'lobby' })
-    }
-
-    const handleDisconnect = () => {
-      console.log('[Lobby] Socket disconnected!')
-      dispatch({ type: 'SET_CONNECTION_STATUS', status: 'disconnected' })
-    }
-
-    socket?.on('connect', handleConnect)
-    socket?.on('disconnect', handleDisconnect)
-
-    return () => {
-      socket?.off('connect', handleConnect)
-      socket?.off('disconnect', handleDisconnect)
-    }
-  }, [dispatch])
 
   // =====================
   // HANDLERS

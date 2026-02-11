@@ -21,7 +21,7 @@ class DeckCreate(BaseModel):
     cards: list[DeckCard] = []
 
 
-@router.get("/")
+@router.get("")
 async def list_decks(
     user_id: str = Query(default="system", description="用户ID"),
 ):
@@ -113,7 +113,7 @@ async def get_deck(deck_id: str):
         }
 
 
-@router.post("/")
+@router.post("")
 async def create_deck(deck: DeckCreate, user_id: str = Query(default="system")):
     """创建新卡组"""
     async with async_session() as session:

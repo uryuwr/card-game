@@ -19,13 +19,34 @@ class SocketService {
   private socket: Socket | null = null
 
   connect() {
-    // If socket already exists (connected or connecting), reuse it
-    if (this.socket) return this.socket
+    // If socket already exists and is connected or actively connecting, reuse it
+    if (this.socket?.connected || this.socket?.active) return this.socket
+    // Destroy stale socket that's no longer usable
+    if (this.socket) {
+      console.log('[Socket] Destroying stale socket, creating fresh connection')
+      this.socket.removeAllListeners()
+      this.socket.disconnect()
+      this.socket = null
+    }
     this.socket = io(GAME_SERVER_URL, {
       transports: ['websocket'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     })
     return this.socket
+  }
+
+  /** Force destroy and recreate the socket (use when entering lobby fresh) */
+  forceReconnect() {
+    if (this.socket) {
+      this.socket.removeAllListeners()
+      this.socket.disconnect()
+      this.socket = null
+    }
+    return this.connect()
   }
 
   disconnect() {
