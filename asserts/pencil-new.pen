@@ -4754,7 +4754,8 @@
                           "content": "[When Attacking] DON!! -1: Your opponent trashes 1 card from their hand.",
                           "lineHeight": 1.4,
                           "fontFamily": "Manrope",
-                          "fontSize": 8
+                          "fontSize": 8,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -5268,6 +5269,1716 @@
               "fontFamily": "Manrope",
               "fontSize": 8,
               "fontWeight": "600"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "63MEp",
+      "x": 1894,
+      "y": 0,
+      "name": "Card Action UI Components",
+      "width": 800,
+      "fill": "#0A1628",
+      "layout": "vertical",
+      "gap": 60,
+      "padding": 40,
+      "children": [
+        {
+          "type": "frame",
+          "id": "DYFmx",
+          "name": "Title Section",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "rectangle",
+              "cornerRadius": 2,
+              "id": "F0Ss6",
+              "fill": "#FFD700",
+              "width": 32,
+              "height": 3
+            },
+            {
+              "type": "text",
+              "id": "MDemv",
+              "fill": "#C9A962",
+              "content": "CARD ACTION RADIAL MENU",
+              "fontFamily": "Outfit",
+              "fontSize": 16,
+              "fontWeight": "700",
+              "letterSpacing": 2
+            },
+            {
+              "type": "text",
+              "id": "l1AOR",
+              "fill": "#888888",
+              "content": "卡牌悬停操作轮盘菜单 - 用于快速选择卡牌操作",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "zSeHt",
+          "name": "Confirm Dialog Title",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "rectangle",
+              "cornerRadius": 2,
+              "id": "Z7Q0v",
+              "fill": "#EF5350",
+              "width": 32,
+              "height": 3
+            },
+            {
+              "type": "text",
+              "id": "FMeBV",
+              "fill": "#C9A962",
+              "content": "CONFIRMATION DIALOG",
+              "fontFamily": "Outfit",
+              "fontSize": 16,
+              "fontWeight": "700",
+              "letterSpacing": 2
+            },
+            {
+              "type": "text",
+              "id": "J2Mxf",
+              "fill": "#888888",
+              "content": "二次确认对话框 - 确保玩家确认重要操作",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mpnFP",
+          "name": "Confirm Dialog Demo",
+          "width": "fill_container",
+          "height": 280,
+          "fill": "#00000099",
+          "cornerRadius": 16,
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "ZRiOQ",
+              "x": 180,
+              "y": 30,
+              "name": "Dialog Box",
+              "width": 360,
+              "height": 220,
+              "fill": "#1A1A2E",
+              "cornerRadius": 12,
+              "stroke": {
+                "thickness": 2,
+                "fill": "#C9A962"
+              },
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#00000080",
+                "offset": {
+                  "x": 0,
+                  "y": 8
+                },
+                "blur": 32
+              },
+              "layout": "vertical",
+              "gap": 20,
+              "padding": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "6mjmT",
+                  "name": "Dialog Header",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "y9m18",
+                      "name": "Icon Bg",
+                      "width": 40,
+                      "height": 40,
+                      "fill": "#EF535020",
+                      "cornerRadius": 8,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "PI7UZ",
+                          "x": 8,
+                          "y": 8,
+                          "width": 24,
+                          "height": 24,
+                          "iconFontName": "skull",
+                          "iconFontFamily": "lucide",
+                          "fill": "#EF5350"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "D8icM",
+                      "name": "Dialog Text",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "CVS9I",
+                          "fill": "#FFFFFF",
+                          "content": "确认KO此角色？",
+                          "fontFamily": "Outfit",
+                          "fontSize": 18,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "tMieb",
+                          "fill": "#888888",
+                          "content": "Confirm KO this character?",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "No5XU",
+                  "name": "Dialog Body",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "YzzuC",
+                      "fill": "#CCCCCC",
+                      "textGrowth": "fixed-width",
+                      "width": 312,
+                      "content": "此操作将把「蒙奇·D·路飞」送入弃牌区。",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "cOttQ",
+                      "fill": "#EF5350",
+                      "content": "该操作不可撤销。",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Pqc8U",
+                  "name": "Dialog Buttons",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "justifyContent": "end",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "hIHdm",
+                      "name": "Cancel Button",
+                      "width": 100,
+                      "height": 40,
+                      "fill": "transparent",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#888888"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "eh1hE",
+                          "fill": "#888888",
+                          "content": "取消",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "FwttS",
+                      "name": "Confirm Button",
+                      "width": 120,
+                      "height": 40,
+                      "fill": "#EF5350",
+                      "cornerRadius": 8,
+                      "gap": 6,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "PqtHX",
+                          "width": 16,
+                          "height": 16,
+                          "iconFontName": "check",
+                          "iconFontFamily": "lucide",
+                          "fill": "#FFFFFF"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ArwrQ",
+                          "fill": "#FFFFFF",
+                          "content": "确认KO",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "5tOR6",
+          "name": "Power Modifier Title",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "rectangle",
+              "cornerRadius": 2,
+              "id": "nPPP0",
+              "fill": "#42A5F5",
+              "width": 32,
+              "height": 3
+            },
+            {
+              "type": "text",
+              "id": "FjZzq",
+              "fill": "#C9A962",
+              "content": "POWER MODIFIER",
+              "fontFamily": "Outfit",
+              "fontSize": 16,
+              "fontWeight": "700",
+              "letterSpacing": 2
+            },
+            {
+              "type": "text",
+              "id": "AYLGm",
+              "fill": "#888888",
+              "content": "力量修改器 - 调整卡牌的战斗力",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "CnCjk",
+          "name": "Power Modifier Demo",
+          "width": "fill_container",
+          "height": 300,
+          "fill": "#0D213766",
+          "cornerRadius": 16,
+          "stroke": {
+            "thickness": 1,
+            "fill": "#1E3A5F"
+          },
+          "gap": 40,
+          "padding": 24,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "y6Mtg",
+              "name": "Card Preview",
+              "width": 100,
+              "layout": "vertical",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "PiJpw",
+                  "name": "Card Frame",
+                  "width": 80,
+                  "height": 112,
+                  "fill": "#1565C0",
+                  "cornerRadius": 6,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#42A5F5"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#42A5F540",
+                    "offset": {
+                      "x": 0,
+                      "y": 4
+                    },
+                    "blur": 16
+                  },
+                  "layout": "vertical",
+                  "padding": [
+                    4,
+                    6,
+                    8,
+                    6
+                  ],
+                  "justifyContent": "end",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "wEjwz",
+                      "fill": "#FFFFFF",
+                      "content": "路飞",
+                      "fontFamily": "Outfit",
+                      "fontSize": 10,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "5ibqY",
+                      "name": "powerBadge",
+                      "width": "fill_container",
+                      "height": 20,
+                      "fill": "#00000099",
+                      "cornerRadius": 4,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "PNdl9",
+                          "fill": "#FFD700",
+                          "content": "7000",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "bold"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "icUOn",
+                  "fill": "#888888",
+                  "content": "原始力量: 5000",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "185Un",
+              "name": "Modifier Panel",
+              "width": 280,
+              "layout": "vertical",
+              "gap": 24,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "edTEg",
+                  "name": "modTitle",
+                  "layout": "vertical",
+                  "gap": 4,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "EXh0I",
+                      "fill": "#FFFFFF",
+                      "content": "调整力量值",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "KQH9F",
+                      "fill": "#888888",
+                      "content": "Adjust Power Value",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "sPEMi",
+                  "name": "Scroll Selector",
+                  "width": 260,
+                  "height": 80,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "4HzrZ",
+                      "name": "Minus Button",
+                      "width": 48,
+                      "height": 48,
+                      "fill": "#1A1A2E",
+                      "cornerRadius": 24,
+                      "stroke": {
+                        "thickness": 2,
+                        "fill": "#EF5350"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "mV2WY",
+                          "width": 20,
+                          "height": 20,
+                          "iconFontName": "minus",
+                          "iconFontFamily": "lucide",
+                          "fill": "#EF5350"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "agI7P",
+                      "name": "Value Display",
+                      "width": 140,
+                      "height": 80,
+                      "layout": "vertical",
+                      "gap": 4,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "0GhkB",
+                          "fill": "#42A5F5",
+                          "content": "+2000",
+                          "fontFamily": "Outfit",
+                          "fontSize": 32,
+                          "fontWeight": "800",
+                          "letterSpacing": -1
+                        },
+                        {
+                          "type": "frame",
+                          "id": "XTF3j",
+                          "name": "modifierBadge",
+                          "fill": "#42A5F520",
+                          "cornerRadius": 4,
+                          "gap": 4,
+                          "padding": [
+                            2,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "d2nRp",
+                              "fill": "#42A5F5",
+                              "content": "DON×2",
+                              "fontFamily": "Outfit",
+                              "fontSize": 10,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "saYsP",
+                      "name": "Plus Button",
+                      "width": 48,
+                      "height": 48,
+                      "fill": "#42A5F5",
+                      "cornerRadius": 24,
+                      "stroke": {
+                        "thickness": 2,
+                        "fill": "#42A5F5"
+                      },
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#42A5F560",
+                        "offset": {
+                          "x": 0,
+                          "y": 2
+                        },
+                        "blur": 8
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "lwrl0",
+                          "width": 20,
+                          "height": 20,
+                          "iconFontName": "plus",
+                          "iconFontFamily": "lucide",
+                          "fill": "#FFFFFF"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Nsmly",
+                  "name": "Quick Buttons",
+                  "width": "fill_container",
+                  "gap": 8,
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ECHG2",
+                      "name": "qBtn1",
+                      "width": 56,
+                      "height": 32,
+                      "fill": "#1A1A2E",
+                      "cornerRadius": 6,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#1E3A5F"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uulC3",
+                          "fill": "#8EACCD",
+                          "content": "+1000",
+                          "fontFamily": "Outfit",
+                          "fontSize": 10,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "s6aOE",
+                      "name": "qBtn2",
+                      "width": 56,
+                      "height": 32,
+                      "fill": "#42A5F520",
+                      "cornerRadius": 6,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#42A5F5"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "QpI4N",
+                          "fill": "#42A5F5",
+                          "content": "+2000",
+                          "fontFamily": "Outfit",
+                          "fontSize": 10,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "8iT55",
+                      "name": "qBtn3",
+                      "width": 56,
+                      "height": 32,
+                      "fill": "#1A1A2E",
+                      "cornerRadius": 6,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#1E3A5F"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Sv0Yn",
+                          "fill": "#8EACCD",
+                          "content": "+3000",
+                          "fontFamily": "Outfit",
+                          "fontSize": 10,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "x8TKo",
+                      "name": "qBtn4",
+                      "width": 56,
+                      "height": 32,
+                      "fill": "#1A1A2E",
+                      "cornerRadius": 6,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#1E3A5F"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Zp45I",
+                          "fill": "#888888",
+                          "content": "自定义",
+                          "fontFamily": "Outfit",
+                          "fontSize": 10,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "e6d2V",
+                  "name": "Confirm Row",
+                  "width": "fill_container",
+                  "gap": 12,
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "nGhXo",
+                      "name": "Power Cancel",
+                      "width": 100,
+                      "height": 40,
+                      "fill": "transparent",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#888888"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "6iP2W",
+                          "fill": "#888888",
+                          "content": "取消",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Fz9cX",
+                      "name": "Power Confirm",
+                      "width": 140,
+                      "height": 40,
+                      "fill": {
+                        "type": "gradient",
+                        "gradientType": "linear",
+                        "enabled": true,
+                        "rotation": 90,
+                        "size": {
+                          "height": 1
+                        },
+                        "colors": [
+                          {
+                            "color": "#42A5F5",
+                            "position": 0
+                          },
+                          {
+                            "color": "#1565C0",
+                            "position": 1
+                          }
+                        ]
+                      },
+                      "cornerRadius": 8,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#42A5F560",
+                        "offset": {
+                          "x": 0,
+                          "y": 2
+                        },
+                        "blur": 8
+                      },
+                      "gap": 6,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "3OJz5",
+                          "width": 16,
+                          "height": 16,
+                          "iconFontName": "check",
+                          "iconFontFamily": "lucide",
+                          "fill": "#FFFFFF"
+                        },
+                        {
+                          "type": "text",
+                          "id": "fEbKL",
+                          "fill": "#FFFFFF",
+                          "content": "确认修改",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "vtyog",
+          "name": "Swipe Wheel Menu",
+          "width": "fill_container",
+          "height": 420,
+          "fill": "#0D213766",
+          "cornerRadius": 16,
+          "stroke": {
+            "thickness": 1,
+            "fill": "#1E3A5F"
+          },
+          "layout": "none",
+          "children": [
+            {
+              "type": "frame",
+              "id": "syj1F",
+              "x": 280,
+              "y": 16,
+              "name": "Menu Title",
+              "layout": "vertical",
+              "gap": 4,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "uV7gL",
+                  "fill": "#C9A962",
+                  "content": "选择操作",
+                  "fontFamily": "Outfit",
+                  "fontSize": 18,
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "1MJE8",
+                  "fill": "#888888",
+                  "content": "上下滑动选择，点击确认",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "oNhYv",
+              "x": 305,
+              "y": 55,
+              "name": "Card Preview",
+              "width": 70,
+              "height": 98,
+              "fill": "#C62828",
+              "cornerRadius": 6,
+              "stroke": {
+                "thickness": 2,
+                "fill": "#FFD700"
+              },
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#FFD70040",
+                "offset": {
+                  "x": 0,
+                  "y": 8
+                },
+                "blur": 24
+              },
+              "layout": "vertical",
+              "padding": [
+                4,
+                8,
+                8,
+                8
+              ],
+              "justifyContent": "end",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m862f",
+                  "fill": "#FFFFFF80",
+                  "content": "角色卡",
+                  "fontFamily": "Outfit",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "ellipse",
+              "id": "JsdHi",
+              "x": 195,
+              "y": 120,
+              "name": "Arc Background",
+              "fill": {
+                "type": "gradient",
+                "gradientType": "radial",
+                "enabled": true,
+                "rotation": 0,
+                "size": {
+                  "width": 1,
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#1A1A2E",
+                    "position": 0
+                  },
+                  {
+                    "color": "#0D213700",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 300,
+              "height": 300
+            },
+            {
+              "type": "ellipse",
+              "id": "6HOYd",
+              "x": 245,
+              "y": 170,
+              "name": "Inner Ring",
+              "fill": "transparent",
+              "width": 200,
+              "height": 200,
+              "stroke": {
+                "thickness": 1,
+                "fill": "#FFD70020"
+              }
+            },
+            {
+              "type": "frame",
+              "id": "4kPGj",
+              "x": 220,
+              "y": 246,
+              "name": "Selection Highlight",
+              "width": 240,
+              "height": 44,
+              "fill": "#C9A96230",
+              "cornerRadius": 8,
+              "stroke": {
+                "thickness": 2,
+                "fill": "#FFD700"
+              }
+            },
+            {
+              "type": "text",
+              "id": "8XWy1",
+              "x": 300,
+              "y": 182,
+              "name": "Option 1",
+              "fill": "#66666680",
+              "content": "力量修改",
+              "fontFamily": "Outfit",
+              "fontSize": 14,
+              "fontWeight": "500"
+            },
+            {
+              "type": "text",
+              "id": "2IYH3",
+              "x": 305,
+              "y": 212,
+              "name": "Option 2",
+              "fill": "#999999AA",
+              "content": "KO击败",
+              "fontFamily": "Outfit",
+              "fontSize": 16,
+              "fontWeight": "500"
+            },
+            {
+              "type": "text",
+              "id": "hPYsU",
+              "x": 285,
+              "y": 252,
+              "name": "Option 3 Selected",
+              "fill": "#FFD700",
+              "content": "横置休息",
+              "fontFamily": "Outfit",
+              "fontSize": 22,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "vtiea",
+              "x": 302,
+              "y": 295,
+              "name": "Option 4",
+              "fill": "#999999AA",
+              "content": "竖置激活",
+              "fontFamily": "Outfit",
+              "fontSize": 16,
+              "fontWeight": "500"
+            },
+            {
+              "type": "text",
+              "id": "VybQ4",
+              "x": 300,
+              "y": 328,
+              "name": "Option 5",
+              "fill": "#66666680",
+              "content": "取消操作",
+              "fontFamily": "Outfit",
+              "fontSize": 14,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "iPIyz",
+              "x": 200,
+              "y": 175,
+              "name": "Swipe Touch Area",
+              "width": 280,
+              "height": 180,
+              "fill": "transparent",
+              "cornerRadius": 12,
+              "stroke": {
+                "thickness": 1,
+                "fill": "#FFD70020"
+              }
+            },
+            {
+              "type": "frame",
+              "id": "u8Tw7",
+              "x": 60,
+              "y": 230,
+              "name": "Swipe Indicator",
+              "layout": "vertical",
+              "gap": 6,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "yr0TG",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "chevrons-up",
+                  "iconFontFamily": "lucide",
+                  "fill": "#FFD70060"
+                },
+                {
+                  "type": "text",
+                  "id": "hU3p0",
+                  "fill": "#888888",
+                  "content": "滑动",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "icon_font",
+                  "id": "BlLoS",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "chevrons-down",
+                  "iconFontFamily": "lucide",
+                  "fill": "#FFD70060"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "e1vhC",
+              "x": 270,
+              "y": 368,
+              "name": "Confirm Button",
+              "width": 140,
+              "height": 40,
+              "fill": "#C9A962",
+              "cornerRadius": 20,
+              "gap": 8,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "QBaU3",
+                  "width": 18,
+                  "height": 18,
+                  "iconFontName": "check",
+                  "iconFontFamily": "lucide",
+                  "fill": "#0A1628"
+                },
+                {
+                  "type": "text",
+                  "id": "M3gQQ",
+                  "fill": "#0A1628",
+                  "content": "确认选择",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "09pAm",
+              "x": 530,
+              "y": 245,
+              "name": "Desc Hint",
+              "layout": "vertical",
+              "gap": 2,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "PU02W",
+                  "fill": "#C9A962",
+                  "content": "横置休息",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "GpWQQ",
+                  "fill": "#888888",
+                  "content": "将卡牌横置表示已使用",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "OyDJl",
+                  "fill": "#666666",
+                  "content": "本回合无法再次行动",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "2sXYM",
+              "x": 210,
+              "y": 266,
+              "name": "Center Line",
+              "fill": "#FFD70030",
+              "width": 260,
+              "height": 2
+            },
+            {
+              "type": "frame",
+              "id": "VUjnM",
+              "x": 430,
+              "y": 35,
+              "name": "State 2 - KO",
+              "width": 320,
+              "height": 340,
+              "fill": "#0D2137",
+              "cornerRadius": 12,
+              "stroke": {
+                "thickness": 1,
+                "fill": "#EF535050"
+              },
+              "layout": "none",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "7UTO0",
+                  "x": 80,
+                  "y": 8,
+                  "name": "Title2",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ie4qD",
+                      "fill": "#EF5350",
+                      "content": "滑动后 → KO击败",
+                      "fontFamily": "Outfit",
+                      "fontSize": 12,
+                      "fontWeight": "700",
+                      "letterSpacing": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ESFh8",
+                  "x": 135,
+                  "y": 35,
+                  "name": "Card2",
+                  "width": 50,
+                  "height": 70,
+                  "fill": "#C62828",
+                  "cornerRadius": 4,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#EF5350"
+                  }
+                },
+                {
+                  "type": "ellipse",
+                  "id": "c2sgF",
+                  "x": 60,
+                  "y": 85,
+                  "name": "Arc2",
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "radial",
+                    "enabled": true,
+                    "rotation": 0,
+                    "size": {
+                      "width": 1,
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#1A1A2E",
+                        "position": 0
+                      },
+                      {
+                        "color": "#0D213700",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "width": 200,
+                  "height": 200
+                },
+                {
+                  "type": "frame",
+                  "id": "lp6ZK",
+                  "x": 70,
+                  "y": 175,
+                  "name": "Selection2",
+                  "width": 180,
+                  "height": 36,
+                  "fill": "#EF535030",
+                  "cornerRadius": 6,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#EF5350"
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "ctHQg",
+                  "x": 125,
+                  "y": 145,
+                  "fill": "#55555580",
+                  "content": "力量修改",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "5HP5I",
+                  "x": 120,
+                  "y": 180,
+                  "fill": "#EF5350",
+                  "content": "KO击败",
+                  "fontFamily": "Outfit",
+                  "fontSize": 18,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "SqFve",
+                  "x": 125,
+                  "y": 220,
+                  "fill": "#888888",
+                  "content": "横置休息",
+                  "fontFamily": "Outfit",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "OtImV",
+                  "x": 128,
+                  "y": 248,
+                  "fill": "#55555580",
+                  "content": "竖置激活",
+                  "fontFamily": "Outfit",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "es0hv",
+                  "x": 70,
+                  "y": 197,
+                  "name": "Line2",
+                  "fill": "#EF535030",
+                  "width": 180,
+                  "height": 2
+                },
+                {
+                  "type": "frame",
+                  "id": "vq63F",
+                  "x": 95,
+                  "y": 285,
+                  "name": "Btn2",
+                  "width": 130,
+                  "height": 34,
+                  "fill": "#EF5350",
+                  "cornerRadius": 17,
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "rI295",
+                      "width": 16,
+                      "height": 16,
+                      "iconFontName": "skull",
+                      "iconFontFamily": "lucide",
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "N3YTf",
+                      "fill": "#FFFFFF",
+                      "content": "确认KO",
+                      "fontFamily": "Outfit",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "TKSD7",
+          "name": "Wheel States Section",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "ZeFFr",
+              "name": "States Title",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 2,
+                  "id": "QsEyn",
+                  "fill": "#C9A962",
+                  "width": 32,
+                  "height": 3
+                },
+                {
+                  "type": "text",
+                  "id": "rkECp",
+                  "fill": "#C9A962",
+                  "content": "SWIPE WHEEL STATES",
+                  "fontFamily": "Outfit",
+                  "fontSize": 14,
+                  "fontWeight": "700",
+                  "letterSpacing": 2
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "8VBYL",
+              "name": "States Row",
+              "width": "fill_container",
+              "gap": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Na4PQ",
+                  "name": "State Idle",
+                  "width": 220,
+                  "fill": "#1A1A2E",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "4swuq",
+                      "fill": "#888888",
+                      "content": "默认状态",
+                      "fontFamily": "Outfit",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "6VrRp",
+                      "name": "Mini Wheel 1",
+                      "width": 160,
+                      "height": 100,
+                      "fill": "#0D2137",
+                      "cornerRadius": 8,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "RjSv1",
+                          "x": 40,
+                          "y": 10,
+                          "fill": {
+                            "type": "gradient",
+                            "gradientType": "radial",
+                            "enabled": true,
+                            "rotation": 0,
+                            "size": {
+                              "width": 1,
+                              "height": 1
+                            },
+                            "colors": [
+                              {
+                                "color": "#1A1A2E",
+                                "position": 0
+                              },
+                              {
+                                "color": "#0D213700",
+                                "position": 1
+                              }
+                            ]
+                          },
+                          "width": 80,
+                          "height": 80
+                        },
+                        {
+                          "type": "text",
+                          "id": "btrTJ",
+                          "x": 66,
+                          "y": 28,
+                          "fill": "#666666",
+                          "content": "横置",
+                          "fontFamily": "Outfit",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "WHheo",
+                          "x": 72,
+                          "y": 44,
+                          "fill": "#888888",
+                          "content": "KO",
+                          "fontFamily": "Outfit",
+                          "fontSize": 13,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "YoE1a",
+                          "x": 66,
+                          "y": 64,
+                          "fill": "#666666",
+                          "content": "力量",
+                          "fontFamily": "Outfit",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "ITmGi",
+                      "fill": "#555555",
+                      "content": "显示选项列表",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "jaAU0",
+                  "name": "State Swiping",
+                  "width": 220,
+                  "fill": "#1A1A2E",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "UaQce",
+                      "fill": "#FFD700",
+                      "content": "滑动中",
+                      "fontFamily": "Outfit",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "VIQHj",
+                      "name": "Mini Wheel 2",
+                      "width": 160,
+                      "height": 100,
+                      "fill": "#0D2137",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#FFD70050"
+                      },
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "R69TB",
+                          "x": 40,
+                          "y": 10,
+                          "fill": {
+                            "type": "gradient",
+                            "gradientType": "radial",
+                            "enabled": true,
+                            "rotation": 0,
+                            "size": {
+                              "width": 1,
+                              "height": 1
+                            },
+                            "colors": [
+                              {
+                                "color": "#1A1A2E80",
+                                "position": 0
+                              },
+                              {
+                                "color": "#0D213700",
+                                "position": 1
+                              }
+                            ]
+                          },
+                          "width": 80,
+                          "height": 80
+                        },
+                        {
+                          "type": "text",
+                          "id": "HlY3Q",
+                          "x": 66,
+                          "y": 20,
+                          "fill": "#666666",
+                          "content": "横置",
+                          "fontFamily": "Outfit",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "sLeaj",
+                          "x": 20,
+                          "y": 38,
+                          "width": 120,
+                          "height": 24,
+                          "fill": "#C9A96230",
+                          "cornerRadius": 4,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#FFD700"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "id": "u99aa",
+                          "x": 62,
+                          "y": 42,
+                          "fill": "#FFD700",
+                          "content": "KO击败",
+                          "fontFamily": "Outfit",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "CsJvU",
+                          "x": 66,
+                          "y": 70,
+                          "fill": "#666666",
+                          "content": "力量",
+                          "fontFamily": "Outfit",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "PVEUW",
+                      "fill": "#C9A962",
+                      "content": "高亮显示当前选项",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "G5KjX",
+                  "name": "State Selected",
+                  "width": 220,
+                  "fill": "#1A1A2E",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 16,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "6ht7F",
+                      "fill": "#42A5F5",
+                      "content": "已选择",
+                      "fontFamily": "Outfit",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "CHGty",
+                      "name": "Mini Wheel 3",
+                      "width": 160,
+                      "height": 100,
+                      "fill": "#0D2137",
+                      "cornerRadius": 8,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "ellipse",
+                          "id": "InaBL",
+                          "x": 40,
+                          "y": 10,
+                          "fill": {
+                            "type": "gradient",
+                            "gradientType": "radial",
+                            "enabled": true,
+                            "rotation": 0,
+                            "size": {
+                              "width": 1,
+                              "height": 1
+                            },
+                            "colors": [
+                              {
+                                "color": "#42A5F520",
+                                "position": 0
+                              },
+                              {
+                                "color": "#0D213700",
+                                "position": 1
+                              }
+                            ]
+                          },
+                          "width": 80,
+                          "height": 80
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Tk2xg",
+                          "x": 15,
+                          "y": 36,
+                          "width": 130,
+                          "height": 28,
+                          "fill": "#42A5F5",
+                          "cornerRadius": 4
+                        },
+                        {
+                          "type": "icon_font",
+                          "id": "kAqZV",
+                          "x": 35,
+                          "y": 43,
+                          "width": 14,
+                          "height": 14,
+                          "iconFontName": "check",
+                          "iconFontFamily": "lucide",
+                          "fill": "#FFFFFF"
+                        },
+                        {
+                          "type": "text",
+                          "id": "UAXHO",
+                          "x": 55,
+                          "y": 43,
+                          "fill": "#FFFFFF",
+                          "content": "力量修改",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "KHNla",
+                      "fill": "#42A5F5",
+                      "content": "确认后执行操作",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
