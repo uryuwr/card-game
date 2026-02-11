@@ -44,17 +44,17 @@ export default function CardComponent({
   const actualDon = slot?.attachedDon ?? attachedDon ?? 0
   const actualPower = slot?.power ?? card.power
   const height = Math.round(width * CARD_RATIO)
-  const [imgError, setImgError] = useState(false)
+  const [imgFallback, setImgFallback] = useState(0) // 0=primary, 1=png, 2=jpg
   
-  // 优先使用imageUrl，如果没有则用本地路径
+  // 优先使用imageUrl → 本地.png → 本地.jpg
   const getImgSrc = () => {
-    if (imgError) {
-      return `/cards/${card.cardNumber}.jpg`
-    }
-    if (card.imageUrl) {
+    if (imgFallback === 0 && card.imageUrl) {
       return card.imageUrl
     }
-    return `/cards/${card.cardNumber}.png`
+    if (imgFallback <= 1) {
+      return `/cards/${card.cardNumber}.png`
+    }
+    return `/cards/${card.cardNumber}.jpg`
   }
   const imgSrc = getImgSrc()
 
@@ -101,7 +101,7 @@ export default function CardComponent({
           className="card-img"
           style={{ width, height }}
           draggable={false}
-          onError={() => !imgError && setImgError(true)} />
+          onError={() => setImgFallback(prev => Math.min(prev + 1, 2))} />
         {showPower && actualPower != null && (
           <div className="card-power-badge">
             <span>{actualPower}</span>

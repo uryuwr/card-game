@@ -111,6 +111,7 @@ export async function fetchDeckFromAPI(deckId) {
         counter: cardEntry.counter,
         effect: cardEntry.effect,
         trigger: cardEntry.trigger,
+        effectScript: cardEntry.effect_script,
         imageUrl: cardEntry.image_url,
       }
       // Add multiple copies based on count
@@ -131,6 +132,7 @@ export async function fetchDeckFromAPI(deckId) {
       life: data.leader.life,
       effect: data.leader.effect,
       trigger: data.leader.trigger,
+      effectScript: data.leader.effect_script,
       imageUrl: data.leader.image_url,
     } : null
     

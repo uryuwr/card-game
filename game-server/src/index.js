@@ -348,7 +348,30 @@ io.on('connection', (socket) => {
     const ids = cardInstanceIds || (cardInstanceId ? [cardInstanceId] : [])
     const result = room.engine.playCounter(socket.id, ids, manualPower || 0)
     if (result.success) {
+      // 反击成功后自动结算战斗
+      const battleResult = room.engine.skipCounter(socket.id)
+      // 通知攻击方对手使用了哪些反击卡
+      const attacker = room.engine._getOpponent(socket.id)
+      if (attacker && result.cardsUsed?.length > 0) {
+        const attackerSocket = io.sockets.sockets.get(attacker.id)
+        if (attackerSocket) {
+          attackerSocket.emit('counter:played', {
+            cardsUsed: result.cardsUsed.map(c => ({
+              name: c.nameCn || c.name,
+              cardNumber: c.cardNumber,
+              counter: c.counter || 0,
+              imageUrl: c.imageUrl,
+            })),
+            counterPower: result.counterPower,
+            newTargetPower: result.newTargetPower,
+          })
+        }
+      }
       broadcastGameState(room)
+      // 检查战斗结果是否导致游戏结束
+      if (room.engine.winner) {
+        handleGameEnd(room)
+      }
     } else {
       socket.emit('error', { message: result.message })
     }
@@ -533,6 +556,25 @@ io.on('connection', (socket) => {
 
     const result = room.engine.resolveSearch(socket.id, selectedIds || [], bottomIds || [])
     if (result.success) {
+      // 通知对手检索了哪些卡
+      if (selectedIds.length > 0) {
+        const player = room.engine._getPlayer(socket.id)
+        const opponent = room.engine._getOpponent(socket.id)
+        if (opponent) {
+          const oppSocket = io.sockets.sockets.get(opponent.id)
+          if (oppSocket) {
+            // 从手牌末尾取刚加入的卡牌信息
+            const addedCards = (player?.hand || []).slice(-selectedIds.length)
+            oppSocket.emit('search:revealed', {
+              cards: addedCards.map(c => ({
+                name: c.nameCn || c.name,
+                cardNumber: c.cardNumber,
+                imageUrl: c.imageUrl,
+              })),
+            })
+          }
+        }
+      }
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
@@ -601,6 +643,30 @@ io.on('connection', (socket) => {
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
+    }
+  })
+
+  // RESOLVE PENDING EFFECT (玩家选择效果目标)
+  socket.on(SOCKET_EVENTS.RESOLVE_EFFECT, ({ targetInstanceId }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.resolveEffectTarget(socket.id, targetInstanceId)
+    if (result.success) {
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // SKIP PENDING EFFECT (跳过效果)
+  socket.on(SOCKET_EVENTS.SKIP_EFFECT, () => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.skipEffect(socket.id)
+    if (result.success) {
+      broadcastGameState(room)
     }
   })
 

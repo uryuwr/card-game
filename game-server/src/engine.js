@@ -17,6 +17,7 @@ import {
   KEYWORDS,
 } from '../../shared/constants.js'
 import { getCardPool, buildDeckFromCards, fetchDeckFromAPI } from './cards.js'
+import { ScriptEngine, TRIGGER_TYPES } from './script-engine/index.js'
 
 export class GameEngine {
   constructor(room) {
@@ -28,8 +29,10 @@ export class GameEngine {
     this.battleStep = BATTLE_STEPS.NONE
     this.pendingAttack = null
     this.pendingCounterPower = 0
+    this.pendingEffect = null
     this.winner = null
     this.actionLog = []
+    this.scriptEngine = new ScriptEngine(this)
   }
 
   /**
@@ -155,6 +158,9 @@ export class GameEngine {
     this._log(`🎲 ${this.players[0].name}: ${diceRolls[0]} vs ${this.players[1].name}: ${diceRolls[1]}`)
     this._log(`${this.players[this.currentTurnIndex].name} 先手!`)
     
+    // 注册所有初始卡牌的脚本（领袖）
+    this.scriptEngine.registerInitialCards()
+
     console.log('[ENGINE] Getting state...')
     const state = this.getState()
     console.log('[ENGINE] State keys:', Object.keys(state))
@@ -279,18 +285,15 @@ export class GameEngine {
 
   _runEndPhase() {
     const player = this._getCurrentPlayer()
+    const opponent = this._getOpponent(player.id)
     
-    // 领袖效果: OP02-001 白胡子 - 回合结束时，将生命区最上方1张加入手牌
-    if (player.leader.card.cardNumber === 'OP02-001' && player.life.length > 0) {
-      // 检查是否被效果限制禁止
-      if (player.effectRestrictions?.cannotLifeToHand) {
-        this._log(`[领袖效果] ${player.leader.card.nameCn || '白胡子'}: 本回合无法通过效果将生命牌加入手牌（被限制）`)
-      } else {
-        const [card] = player.life.splice(0, 1) // 取最上方的卡
-        player.hand.push(card)
-        this._log(`[领袖效果] ${player.leader.card.nameCn || '白胡子'}: 将生命区最上方1张卡牌加入手牌 (剩余生命: ${player.life.length})`)
-      }
-    }
+    // 触发 TURN_END 脚本（替代硬编码的 OP02-001 白胡子效果）
+    this.scriptEngine.executeTrigger(TRIGGER_TYPES.TURN_END, {
+      sourceCard: player.leader.card,
+      sourceSlot: player.leader,
+      player,
+      opponent,
+    })
     
     // 清除本回合的效果限制
     if (player.effectRestrictions) {
@@ -366,16 +369,23 @@ export class GameEngine {
 
     this._log(`${player.name} plays ${card.nameCn || card.name} (Cost: ${cost})`)
 
-    // Handle On Play effects (manual action prompt)
-    if (this._hasKeyword(card, KEYWORDS.ON_PLAY)) {
-      this._log(`[On Play] ${card.nameCn || card.name} effect triggered - execute manually`)
-    }
+    // 注册卡牌脚本
+    this.scriptEngine.registerCard(card, card.instanceId, player.id)
 
-    // OP02-004 爱德华·纽哥特 登场效果：本回合禁止通过效果将生命牌加入手牌
-    if (card.cardNumber === 'OP02-004') {
-      player.effectRestrictions = player.effectRestrictions || {}
-      player.effectRestrictions.cannotLifeToHand = true
-      this._log(`[登场效果] ${card.nameCn || '爱德华·纽哥特'}: 本回合无法通过效果将生命牌加入手牌`)
+    // 触发 ON_PLAY 脚本
+    const opponent = this._getOpponent(socketId)
+    const charSlot = player.characters[player.characters.length - 1]
+    const scriptResults = this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_PLAY, {
+      sourceCard: card,
+      sourceSlot: charSlot,
+      player,
+      opponent,
+    })
+
+    // 如果没有脚本处理，回退到手动提示
+    const hasAutoEffect = scriptResults.some(r => r.executed)
+    if (!hasAutoEffect && this._hasKeyword(card, KEYWORDS.ON_PLAY)) {
+      this._log(`[On Play] ${card.nameCn || card.name} effect triggered - execute manually`)
     }
 
     return { success: true, cardPlayed: card }
@@ -665,10 +675,20 @@ export class GameEngine {
       isTargetLeader: targetId === 'leader',
       hasDoubleAttack: this._hasKeyword(attacker, KEYWORDS.DOUBLE_ATTACK),
       hasBanish: this._hasKeyword(attacker, KEYWORDS.BANISH),
+      ignoreBlocker: false, // 脚本可设置为 true
     }
 
-    // Check if opponent has blockers
-    const hasBlockers = opponent.characters.some(
+    // 触发 ON_ATTACK 脚本（在检查阻挡者之前）
+    this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_ATTACK, {
+      sourceCard: attacker,
+      sourceSlot: attackerSlot,
+      player,
+      opponent,
+      extra: { attackerId, targetId },
+    })
+
+    // Check if opponent has blockers (在脚本执行后，可能被 ignoreBlocker 覆盖)
+    const hasBlockers = !this.pendingAttack.ignoreBlocker && opponent.characters.some(
       c => c.state === CARD_STATES.ACTIVE && this._hasKeyword(c.card, KEYWORDS.BLOCKER)
     )
 
@@ -761,17 +781,33 @@ export class GameEngine {
 
     let totalCounterPower = 0
     const cardsUsed = []
+    let totalDonCost = 0
 
     for (const instanceId of cardInstanceIds) {
       const cardIndex = player.hand.findIndex(c => c.instanceId === instanceId)
       if (cardIndex === -1) continue
 
       const card = player.hand[cardIndex]
+      // 事件卡作为反击出牌时，需要消耗活跃DON
+      if (card.cardType === CARD_TYPES.EVENT) {
+        const cost = card.cost || 0
+        if (player.donActive < totalDonCost + cost) {
+          return { success: false, message: `DON!!不足: 需要 ${totalDonCost + cost}, 当前 ${player.donActive}` }
+        }
+        totalDonCost += cost
+      }
       const counterValue = card.counter || 0
       totalCounterPower += counterValue
       player.hand.splice(cardIndex, 1)
       player.trash.push(card)
       cardsUsed.push(card)
+    }
+
+    // 扣除事件卡的DON费用
+    if (totalDonCost > 0) {
+      player.donActive -= totalDonCost
+      player.donRested += totalDonCost
+      this._log(`Defender pays ${totalDonCost} DON!! for counter event cards`)
     }
 
     const appliedPower = totalCounterPower + Math.max(0, manualPower || 0)
@@ -864,8 +900,27 @@ export class GameEngine {
         // KO the target character
         const targetSlot = defender.characters.find(c => c.card.instanceId === attack.targetInstanceId)
         if (targetSlot) {
+          // 触发 ON_KO 脚本
+          this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_KO, {
+            sourceCard: targetSlot.card,
+            sourceSlot: targetSlot,
+            player: defender,
+            opponent: attacker,
+          })
+
+          // 归还附着的 DON 到费用区
+          if (targetSlot.attachedDon > 0) {
+            defender.donRested += targetSlot.attachedDon
+            this._log(`${targetSlot.attachedDon} attached DON!! returned to cost area`)
+            targetSlot.attachedDon = 0
+          }
+
           defender.characters = defender.characters.filter(c => c.card.instanceId !== attack.targetInstanceId)
           defender.trash.push(targetSlot.card)
+          
+          // 注销被 KO 卡牌的脚本
+          this.scriptEngine.unregisterCard(attack.targetInstanceId)
+
           result.outcome = 'CHARACTER_KO'
           this._log(`${attack.targetCard.nameCn || attack.targetCard.name} is KO'd`)
         }
@@ -917,7 +972,27 @@ export class GameEngine {
     if (charIndex === -1) return { success: false, message: 'Character not found' }
 
     const [charSlot] = targetPlayer.characters.splice(charIndex, 1)
+
+    // 归还附着的 DON 到费用区
+    if (charSlot.attachedDon > 0) {
+      targetPlayer.donRested += charSlot.attachedDon
+      this._log(`${charSlot.attachedDon} attached DON!! returned to cost area`)
+      charSlot.attachedDon = 0
+    }
+
+    // 触发 ON_KO 脚本
+    const opponent = this._getOpponent(targetPlayerId)
+    this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_KO, {
+      sourceCard: charSlot.card,
+      sourceSlot: charSlot,
+      player: targetPlayer,
+      opponent,
+    })
+
     targetPlayer.trash.push(charSlot.card)
+    
+    // 注销被 KO 卡牌的脚本
+    this.scriptEngine.unregisterCard(targetInstanceId)
 
     this._log(`${charSlot.card.nameCn || charSlot.card.name} is KO'd (effect)`)
     return { success: true, koCard: charSlot.card }
@@ -934,7 +1009,18 @@ export class GameEngine {
     if (charIndex === -1) return { success: false, message: 'Character not found' }
 
     const [charSlot] = targetPlayer.characters.splice(charIndex, 1)
+
+    // 归还附着的 DON 到费用区
+    if (charSlot.attachedDon > 0) {
+      targetPlayer.donRested += charSlot.attachedDon
+      this._log(`${charSlot.attachedDon} attached DON!! returned to cost area`)
+      charSlot.attachedDon = 0
+    }
+
     targetPlayer.hand.push(charSlot.card)
+
+    // 注销离场卡牌的脚本
+    this.scriptEngine.unregisterCard(targetInstanceId)
 
     this._log(`${charSlot.card.nameCn || charSlot.card.name} returned to hand (effect)`)
     return { success: true, returnedCard: charSlot.card }
@@ -951,7 +1037,18 @@ export class GameEngine {
     if (charIndex === -1) return { success: false, message: 'Character not found' }
 
     const [charSlot] = targetPlayer.characters.splice(charIndex, 1)
+
+    // 归还附着的 DON 到费用区
+    if (charSlot.attachedDon > 0) {
+      targetPlayer.donRested += charSlot.attachedDon
+      this._log(`${charSlot.attachedDon} attached DON!! returned to cost area`)
+      charSlot.attachedDon = 0
+    }
+
     targetPlayer.deck.unshift(charSlot.card) // Add to bottom (array start)
+
+    // 注销离场卡牌的脚本
+    this.scriptEngine.unregisterCard(targetInstanceId)
 
     this._log(`${charSlot.card.nameCn || charSlot.card.name} placed at bottom of deck (effect)`)
     return { success: true, movedCard: charSlot.card }
@@ -1270,6 +1367,68 @@ export class GameEngine {
   }
 
   // =====================
+  // PENDING EFFECT (玩家交互)
+  // =====================
+
+  /**
+   * 解决待决效果: 玩家选择目标
+   */
+  resolveEffectTarget(socketId, targetInstanceId) {
+    if (!this.pendingEffect) return { success: false, message: 'No pending effect' }
+    if (this.pendingEffect.playerId !== socketId) return { success: false, message: 'Not your effect' }
+
+    const player = this._getPlayer(socketId)
+    if (!player) return { success: false, message: 'Player not found' }
+    const effect = this.pendingEffect
+
+    if (effect.type === 'ATTACH_DON') {
+      // 找到目标 slot
+      let targetSlot = null
+      if (targetInstanceId === 'leader') {
+        targetSlot = player.leader
+      } else {
+        targetSlot = player.characters.find(c => c.card.instanceId === targetInstanceId)
+      }
+      if (!targetSlot) return { success: false, message: 'Target not found' }
+
+      // 从休息 DON 池分配
+      if (player.donRested <= 0) {
+        this._log(`[效果] 没有可用的休息 DON!!，效果结束`)
+        this.pendingEffect = null
+        return { success: true, effectComplete: true }
+      }
+
+      player.donRested -= 1
+      targetSlot.attachedDon += 1
+      effect.remaining -= 1
+
+      const targetName = targetSlot.card.nameCn || targetSlot.card.name
+      this._log(`[效果] ${effect.sourceCardName}: 给 ${targetName} 贴 1 DON!!`)
+
+      if (effect.remaining <= 0 || player.donRested <= 0) {
+        this.pendingEffect = null
+        return { success: true, effectComplete: true }
+      }
+
+      return { success: true, effectComplete: false }
+    }
+
+    return { success: false, message: 'Unknown effect type' }
+  }
+
+  /**
+   * 跳过待决效果
+   */
+  skipEffect(socketId) {
+    if (!this.pendingEffect) return { success: false, message: 'No pending effect' }
+    if (this.pendingEffect.playerId !== socketId) return { success: false, message: 'Not your effect' }
+
+    this._log(`[效果] ${this.pendingEffect.sourceCardName}: 效果跳过`)
+    this.pendingEffect = null
+    return { success: true }
+  }
+
+  // =====================
   // STATE & HELPERS
   // =====================
 
@@ -1280,6 +1439,7 @@ export class GameEngine {
       turnNumber: this.turnNumber,
       currentTurn: this.players[this.currentTurnIndex]?.id,
       pendingAttack: this.pendingAttack,
+      pendingEffect: this.pendingEffect,
       winner: this.winner,
       diceRolls: this.diceRolls, // 骰子结果（仅游戏开始时有意义）
       players: this.players.map(p => ({
@@ -1350,6 +1510,7 @@ export class GameEngine {
       trait: card.trait,
       rarity: card.rarity,
       imageUrl: card.imageUrl,
+      effectScript: card.effectScript,
     }
   }
 

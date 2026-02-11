@@ -171,6 +171,11 @@ export default function Game() {
   const [powerAdjustAmount, setPowerAdjustAmount] = useState(0)
   const [powerAdjustOpenedAt, setPowerAdjustOpenedAt] = useState(0)
   const [counterAdjustOpenedAt, setCounterAdjustOpenedAt] = useState(0)
+  // 通知弹窗 (反击出牌/检索结果)
+  const [notification, setNotification] = useState<{ message: string; cards?: Card[] } | null>(null)
+  // 攻击箭头
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [arrowCoords, setArrowCoords] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   // 检索弹窗
   const [viewedCards, setViewedCards] = useState<Card[]>([])
   const [showSearchModal, setShowSearchModal] = useState(false)
@@ -194,6 +199,43 @@ export default function Game() {
       (state.gamePhase === 'main' || state.gamePhase === 'battle') &&
       !state.pendingAttack
   }, [isMyTurn, state.gamePhase, state.pendingAttack])
+
+  // ============ Attack Arrow position tracking ============
+  useEffect(() => {
+    if (!state.pendingAttack || !boardRef.current) {
+      setArrowCoords(null)
+      return
+    }
+    const pa = state.pendingAttack
+    const isAttacker = state.player?.id === state.currentTurn
+    // 攻击者(我方)在下方(plr), 目标(对方)在上方(opp) —— 或反过来
+    const attackerPrefix = isAttacker ? 'plr' : 'opp'
+    const targetPrefix = isAttacker ? 'opp' : 'plr'
+    const attackerKey = pa.attackerInstanceId === 'leader' ? `${attackerPrefix}-leader` : `${attackerPrefix}-${pa.attackerInstanceId}`
+    const targetKey = pa.targetInstanceId === 'leader' ? `${targetPrefix}-leader` : `${targetPrefix}-${pa.targetInstanceId}`
+
+    const getCenter = (key: string) => {
+      const el = boardRef.current?.querySelector(`[data-card-id="${key}"]`) as HTMLElement | null
+      if (!el) return null
+      const rect = el.getBoundingClientRect()
+      const boardRect = boardRef.current!.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2 - boardRect.left, y: rect.top + rect.height / 2 - boardRect.top }
+    }
+
+    const update = () => {
+      const from = getCenter(attackerKey)
+      const to = getCenter(targetKey)
+      if (from && to) {
+        setArrowCoords({ x1: from.x, y1: from.y, x2: to.x, y2: to.y })
+      } else {
+        setArrowCoords(null)
+      }
+    }
+    update()
+    // 窗口resize时更新
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [state.pendingAttack, state.player?.id, state.currentTurn])
 
   // ============ Socket Handlers ============
   useEffect(() => {
@@ -339,6 +381,38 @@ export default function Game() {
     socket.on('game:leader-effect-prompt', handleLeaderEffectPrompt)
     socket.on('game:view-top-result', handleViewTopResult)
     socket.on('connect', handleReconnect)
+    // 收到对手反击出牌通知
+    const handleCounterPlayed = (data: any) => {
+      if (data.cardsUsed?.length > 0) {
+        const names = data.cardsUsed.map((c: any) => c.name).join(', ')
+        setNotification({
+          message: `对手反击: ${names} (+${data.counterPower})`,
+          cards: data.cardsUsed.map((c: any) => ({
+            instanceId: c.cardNumber,
+            cardNumber: c.cardNumber,
+            name: c.name,
+          } as Card)),
+        })
+        setTimeout(() => setNotification(null), 3000)
+      }
+    }
+    socket.on('counter:played', handleCounterPlayed)
+    // 收到对手检索结果通知
+    const handleSearchRevealed = (data: any) => {
+      if (data.cards?.length > 0) {
+        const names = data.cards.map((c: any) => c.name).join(', ')
+        setNotification({
+          message: `对手检索加入手牌: ${names}`,
+          cards: data.cards.map((c: any) => ({
+            instanceId: c.cardNumber,
+            cardNumber: c.cardNumber,
+            name: c.name,
+          } as Card)),
+        })
+        setTimeout(() => setNotification(null), 3000)
+      }
+    }
+    socket.on('search:revealed', handleSearchRevealed)
     
     // Auto Rejoin on mount:
     // If we already have player state (navigated from Lobby after game:start), no rejoin needed.
@@ -370,6 +444,8 @@ export default function Game() {
       socket.off('game:leader-effect-prompt', handleLeaderEffectPrompt)
       socket.off('game:view-top-result', handleViewTopResult)
       socket.off('connect', handleReconnect)
+      socket.off('counter:played', handleCounterPlayed)
+      socket.off('search:revealed', handleSearchRevealed)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, navigate])
@@ -792,6 +868,7 @@ export default function Game() {
         {p.characters.map(slot => (
           <div
             key={slot.card.instanceId}
+            data-card-id={`${isOpp ? 'opp' : 'plr'}-${slot.card.instanceId}`}
             className={`char-slot ${slot.canAttackThisTurn === false ? 'newly-played' : ''}`}
           >
             <CardComponent
@@ -865,7 +942,7 @@ export default function Game() {
         </div>
 
         {/* Leader */}
-        <div className="zone-box leader-zone">
+        <div className="zone-box leader-zone" data-card-id={`${isOpp ? 'opp' : 'plr'}-leader`}>
           <span className="zone-label gold">LEADER</span>
           {p.leader && (
             <CardComponent
@@ -1208,7 +1285,7 @@ export default function Game() {
       </div>
 
       {/* ═══ BOARD AREA ═══ */}
-      <div className="board-area">
+      <div className="board-area" ref={boardRef}>
         <div className="opp-board">
           {oppBoard?.charRow}
           {oppBoard?.midRow}
@@ -1222,6 +1299,23 @@ export default function Game() {
           {plrBoard?.midRow}
           {plrBoard?.costRow}
         </div>
+
+        {/* Attack arrow SVG overlay */}
+        {arrowCoords && state.pendingAttack && (
+          <svg className="attack-arrow-svg" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 50 }}>
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#ff4444">
+                <polygon points="0 0, 10 3.5, 0 7" />
+              </marker>
+            </defs>
+            <line
+              x1={arrowCoords.x1} y1={arrowCoords.y1}
+              x2={arrowCoords.x2} y2={arrowCoords.y2}
+              stroke="#ff4444" strokeWidth="3" strokeDasharray="8 4"
+              markerEnd="url(#arrowhead)" opacity="0.85"
+            />
+          </svg>
+        )}
       </div>
 
       {/* ═══ PLAYER HAND AREA ═══ */}
@@ -1608,7 +1702,8 @@ export default function Game() {
       {showSearchModal && (
         <div className="modal-overlay" onClick={cancelSearch}>
           <div className="search-modal" onClick={e => {
-            if (e.target === e.currentTarget) {
+            const target = e.target as HTMLElement
+            if (!target.closest('.card-wrap') && !target.closest('.search-card')) {
               setHoveredCard(null)
               setPinnedPreviewId(null)
               setPreviewOrigin(null)
@@ -1667,6 +1762,14 @@ export default function Game() {
             <div className="search-actions">
               {showTrashViewer === 'mine' && selectedTrashCardId && (
                 <div className="trash-footer-actions">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      socketService.recoverFromTrash(selectedTrashCardId)
+                      setShowTrashViewer(null)
+                      setSelectedTrashCardId(null)
+                    }}
+                  >加入手牌</button>
                   <button
                     className="btn btn-primary"
                     disabled={(state.player?.characters.length || 0) >= 5}
@@ -1781,7 +1884,6 @@ export default function Game() {
                   onClick={() => {
                     if (selectedCounterIds.size === 0 && manualCounterPower === 0) return
                     socketService.playCounter(Array.from(selectedCounterIds), manualCounterPower)
-                    socketService.skipCounter()
                     setSelectedCounterIds(new Set())
                     setManualCounterPower(0)
                   }}
@@ -1867,6 +1969,20 @@ export default function Game() {
           <div className="vs-text">
             ⚔ {state.pendingAttack.attackerPower} vs {state.pendingAttack.targetPower}
           </div>
+        </div>
+      )}
+
+      {/* ═══ NOTIFICATION TOAST ═══ */}
+      {notification && (
+        <div className="notification-toast">
+          <div className="notification-text">{notification.message}</div>
+          {notification.cards && notification.cards.length > 0 && (
+            <div className="notification-cards">
+              {notification.cards.map(c => (
+                <CardComponent key={c.instanceId} card={c} width={60} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 

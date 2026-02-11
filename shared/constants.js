@@ -63,6 +63,16 @@ export const KEYWORDS = {
   ACTIVATE_MAIN: 'Activate: Main',
 }
 
+export const TRIGGER_TYPES = {
+  ON_PLAY: 'ON_PLAY',
+  ON_ATTACK: 'ON_ATTACK',
+  ON_BLOCK: 'ON_BLOCK',
+  ON_KO: 'ON_KO',
+  TURN_END: 'TURN_END',
+  ACTIVATE_MAIN: 'ACTIVATE_MAIN',
+  CONSTANT: 'CONSTANT',
+}
+
 export const SOCKET_EVENTS = {
   // Room
   ROOM_CREATE: 'room:create',
@@ -130,6 +140,8 @@ export const SOCKET_EVENTS = {
   PICK_FROM_DECK: 'game:pick-from-deck',
   TRASH_TO_LIFE: 'game:trash-to-life',
   SET_EFFECT_RESTRICTION: 'game:set-effect-restriction',
+  RESOLVE_EFFECT: 'game:resolve-effect',
+  SKIP_EFFECT: 'game:skip-effect',
 
   // System
   ERROR: 'error',
