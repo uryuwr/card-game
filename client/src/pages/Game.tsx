@@ -201,6 +201,32 @@ export default function Game() {
   const [showTrashViewer, setShowTrashViewer] = useState<'mine' | 'opp' | null>(null)
   const [selectedTrashCardId, setSelectedTrashCardId] = useState<string | null>(null)
   const [zoneActionMenu, setZoneActionMenu] = useState<'deck' | 'life' | 'trash' | null>(null)
+  // 触发效果弹窗 (生命牌翻开时的触发效果)
+  const [triggerPrompt, setTriggerPrompt] = useState<{
+    cardNumber: string
+    cardName: string
+    triggerText: string
+    instanceId: string
+    card: Card | null
+  } | null>(null)
+  // 丢弃手牌弹窗
+  const [discardPrompt, setDiscardPrompt] = useState<{
+    validCards: Card[]
+    count: number
+    message: string
+    optional: boolean
+    sourceCardName: string
+  } | null>(null)
+  const [selectedDiscardIds, setSelectedDiscardIds] = useState<Set<string>>(new Set())
+  // 从废弃区回收弹窗
+  const [recoverPrompt, setRecoverPrompt] = useState<{
+    validCards: Card[]
+    maxSelect: number
+    message: string
+    optional: boolean
+    sourceCardName: string
+  } | null>(null)
+  const [selectedRecoverIds, setSelectedRecoverIds] = useState<Set<string>>(new Set())
   // 骰子结果弹窗
   const [diceResult, setDiceResult] = useState<{
     myRoll: number; oppRoll: number; iWon: boolean; myName: string; oppName: string
@@ -452,6 +478,47 @@ export default function Game() {
     }
     socket.on('game:select-target-prompt', handleSelectTargetPrompt)
     
+    // 收到触发效果提示 (生命牌翻开时的触发效果)
+    const handleTriggerPrompt = (data: any) => {
+      console.log('[Game] Received trigger-prompt:', data)
+      setTriggerPrompt({
+        cardNumber: data.cardNumber,
+        cardName: data.cardName,
+        triggerText: data.triggerText,
+        instanceId: data.instanceId,
+        card: data.card || null,
+      })
+    }
+    socket.on('game:trigger-prompt', handleTriggerPrompt)
+    
+    // 收到丢弃手牌提示 (乔巴等效果)
+    const handleDiscardPrompt = (data: any) => {
+      console.log('[Game] Received discard-prompt:', data)
+      setDiscardPrompt({
+        validCards: data.validCards || [],
+        count: data.count || 1,
+        message: data.message || '选择要丢弃的手牌',
+        optional: data.optional ?? false,
+        sourceCardName: data.sourceCardName || '',
+      })
+      setSelectedDiscardIds(new Set())
+    }
+    socket.on('game:discard-prompt', handleDiscardPrompt)
+    
+    // 收到从废弃区回收提示
+    const handleRecoverPrompt = (data: any) => {
+      console.log('[Game] Received recover-prompt:', data)
+      setRecoverPrompt({
+        validCards: data.validCards || [],
+        maxSelect: data.maxSelect || 1,
+        message: data.message || '从废弃区选择卡牌',
+        optional: data.optional ?? false,
+        sourceCardName: data.sourceCardName || '',
+      })
+      setSelectedRecoverIds(new Set())
+    }
+    socket.on('game:recover-prompt', handleRecoverPrompt)
+    
     // Auto Rejoin on mount:
     // If we already have player state (navigated from Lobby after game:start), no rejoin needed.
     // If no player state but token exists, attempt rejoin (page refresh scenario).
@@ -485,6 +552,9 @@ export default function Game() {
       socket.off('counter:played', handleCounterPlayed)
       socket.off('search:revealed', handleSearchRevealed)
       socket.off('game:select-target-prompt', handleSelectTargetPrompt)
+      socket.off('game:trigger-prompt', handleTriggerPrompt)
+      socket.off('game:discard-prompt', handleDiscardPrompt)
+      socket.off('game:recover-prompt', handleRecoverPrompt)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, navigate])
@@ -699,6 +769,10 @@ export default function Game() {
         // 竖置
         if (targetId) socketService.activateTarget(targetId)
         break
+      case 'activateMain':
+        // 发动效果（ACTIVATE_MAIN）
+        if (targetId) socketService.activateMain(targetId)
+        break
       case 'bounceToHand':
         // 返回手牌（刚登场的卡牌）
         if (isNew && targetId && state.player?.id) {
@@ -722,7 +796,7 @@ export default function Game() {
   const getRadialMenuOptions = useCallback(() => {
     if (!radialMenu) return []
     
-    const { type, isNew } = radialMenu
+    const { type, isNew, targetId } = radialMenu
     const options: { id: string; label: string; icon?: string; color?: string; disabled?: boolean }[] = []
     
     if (type === 'character' || type === 'leader') {
@@ -734,6 +808,22 @@ export default function Game() {
         color: '#EF5350',
         disabled: !canAttack
       })
+      
+      // 发动效果选项（ACTIVATE_MAIN）- 只对有主动效果的卡牌显示
+      const targetSlot = type === 'character' 
+        ? state.player?.characters?.find(c => c.card.instanceId === targetId)
+        : type === 'leader' ? state.player?.leader : null
+      const hasActivateMain = targetSlot?.hasActivateMain
+      if (hasActivateMain) {
+        const canActivate = isMyTurn && state.gamePhase === 'main'
+        options.push({
+          id: 'activateMain',
+          label: '发动效果',
+          icon: '⚡',
+          color: '#FF9800',
+          disabled: !canActivate
+        })
+      }
       
       // 返回手牌（仅刚登场的角色）
       if (type === 'character' && isNew) {
@@ -757,7 +847,7 @@ export default function Game() {
     })
     
     return options
-  }, [radialMenu, canAttackNow, state.turnNumber, state.player?.donActive])
+  }, [radialMenu, canAttackNow, state.turnNumber, state.player?.donActive, isMyTurn, state.gamePhase])
 
   // Hover preview handlers
   const handleHover = useCallback((card: Card | null, e?: React.MouseEvent) => {
@@ -2105,6 +2195,155 @@ export default function Game() {
             <p className="dice-result-text">
               {diceResult.iWon ? '🏆 你先手！' : '对手先手'}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TRIGGER EFFECT PROMPT ═══ */}
+      {triggerPrompt && (
+        <div className="modal-overlay">
+          <div className="trigger-modal">
+            <h2>⚡ 触发效果</h2>
+            <p className="trigger-card-name">{triggerPrompt.cardName}</p>
+            {triggerPrompt.card && (
+              <div className="trigger-card-preview">
+                <CardComponent card={triggerPrompt.card} width={120} />
+              </div>
+            )}
+            <p className="trigger-text">{triggerPrompt.triggerText}</p>
+            <div className="trigger-buttons">
+              <button
+                className="btn trigger-activate"
+                onClick={() => {
+                  socketService.respondToTrigger(true)
+                  setTriggerPrompt(null)
+                }}
+              >
+                发动效果
+              </button>
+              <button
+                className="btn trigger-skip"
+                onClick={() => {
+                  socketService.respondToTrigger(false)
+                  setTriggerPrompt(null)
+                }}
+              >
+                跳过 (加入手牌)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DISCARD PROMPT ═══ */}
+      {discardPrompt && (
+        <div className="modal-overlay">
+          <div className="discard-modal">
+            <h2>丢弃手牌</h2>
+            <p className="discard-source">{discardPrompt.sourceCardName}</p>
+            <p className="discard-message">{discardPrompt.message}</p>
+            <p className="discard-hint">选择 {discardPrompt.count} 张卡牌丢弃</p>
+            <div className="discard-card-list">
+              {discardPrompt.validCards.map(card => (
+                <div 
+                  key={card.instanceId} 
+                  className={`discard-card-item ${selectedDiscardIds.has(card.instanceId) ? 'selected' : ''}`}
+                  onClick={() => {
+                    const newSet = new Set(selectedDiscardIds)
+                    if (newSet.has(card.instanceId)) {
+                      newSet.delete(card.instanceId)
+                    } else if (newSet.size < discardPrompt.count) {
+                      newSet.add(card.instanceId)
+                    }
+                    setSelectedDiscardIds(newSet)
+                  }}
+                >
+                  <CardComponent card={card} width={80} />
+                  <span className="card-name">{card.nameCn || card.name}</span>
+                </div>
+              ))}
+            </div>
+            <div className="discard-buttons">
+              <button
+                className="btn discard-confirm"
+                disabled={selectedDiscardIds.size < discardPrompt.count}
+                onClick={() => {
+                  socketService.resolveDiscard(Array.from(selectedDiscardIds))
+                  setDiscardPrompt(null)
+                  setSelectedDiscardIds(new Set())
+                }}
+              >
+                确认丢弃 ({selectedDiscardIds.size}/{discardPrompt.count})
+              </button>
+              {discardPrompt.optional && (
+                <button
+                  className="btn discard-skip"
+                  onClick={() => {
+                    socketService.resolveDiscard([])
+                    setDiscardPrompt(null)
+                    setSelectedDiscardIds(new Set())
+                  }}
+                >
+                  跳过
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ RECOVER FROM TRASH PROMPT ═══ */}
+      {recoverPrompt && (
+        <div className="modal-overlay">
+          <div className="recover-modal">
+            <h2>从废弃区回收</h2>
+            <p className="recover-source">{recoverPrompt.sourceCardName}</p>
+            <p className="recover-message">{recoverPrompt.message}</p>
+            <div className="recover-card-list">
+              {recoverPrompt.validCards.map(card => (
+                <div 
+                  key={card.instanceId} 
+                  className={`recover-card-item ${selectedRecoverIds.has(card.instanceId) ? 'selected' : ''}`}
+                  onClick={() => {
+                    const newSet = new Set(selectedRecoverIds)
+                    if (newSet.has(card.instanceId)) {
+                      newSet.delete(card.instanceId)
+                    } else if (newSet.size < recoverPrompt.maxSelect) {
+                      newSet.add(card.instanceId)
+                    }
+                    setSelectedRecoverIds(newSet)
+                  }}
+                >
+                  <CardComponent card={card} width={80} />
+                  <span className="card-name">{card.nameCn || card.name}</span>
+                </div>
+              ))}
+            </div>
+            <div className="recover-buttons">
+              <button
+                className="btn recover-confirm"
+                disabled={selectedRecoverIds.size === 0 && !recoverPrompt.optional}
+                onClick={() => {
+                  socketService.resolveRecover(Array.from(selectedRecoverIds))
+                  setRecoverPrompt(null)
+                  setSelectedRecoverIds(new Set())
+                }}
+              >
+                确认回收 ({selectedRecoverIds.size}/{recoverPrompt.maxSelect})
+              </button>
+              {recoverPrompt.optional && (
+                <button
+                  className="btn recover-skip"
+                  onClick={() => {
+                    socketService.resolveRecover([])
+                    setRecoverPrompt(null)
+                    setSelectedRecoverIds(new Set())
+                  }}
+                >
+                  跳过
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

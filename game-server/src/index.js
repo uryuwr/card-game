@@ -56,6 +56,41 @@ io.on('connection', (socket) => {
     console.log(`[房间] ${playerName} 创建了房间 ${room.id}, 卡组: ${deckId} (User: ${newUserId})`)
   })
 
+  // 创建测试房间 - 使用测试卡组快速开始游戏
+  socket.on('TEST_ROOM_CREATE', ({ playerName }) => {
+    const { room, userId: newUserId } = roomManager.createRoom(socket.id, playerName || 'TestPlayer1', 'test-deck', null)
+    room.useTestDeck = true // 标记为测试房间
+    socket.join(room.id)
+    socket.emit(SOCKET_EVENTS.ROOM_CREATED, { 
+      roomId: room.id,
+      room: sanitizeRoom(room),
+      userId: newUserId,
+      isTestRoom: true
+    })
+    console.log(`[测试房间] ${playerName || 'TestPlayer1'} 创建了测试房间 ${room.id}`)
+  })
+
+  // 加入测试房间并立即开始游戏
+  socket.on('TEST_ROOM_JOIN', ({ roomId, playerName }) => {
+    const result = roomManager.joinRoom(roomId, socket.id, playerName || 'TestPlayer2', 'test-deck', null)
+    if (!result) {
+      socket.emit('error', { message: '房间不存在或已满' })
+      return
+    }
+    const { room, userId: newUserId } = result
+    socket.join(roomId)
+    socket.emit(SOCKET_EVENTS.ROOM_JOINED, { 
+      roomId,
+      room: sanitizeRoom(room),
+      userId: newUserId,
+      isTestRoom: true
+    })
+    
+    // 自动开始游戏，使用测试卡组
+    console.log(`[测试房间] ${playerName || 'TestPlayer2'} 加入了测试房间 ${roomId}，自动开始游戏`)
+    startGame(room, { useTestDeck: true })
+  })
+
   socket.on(SOCKET_EVENTS.ROOM_JOIN, ({ roomId, playerName, deckId, userId }) => {
     const result = roomManager.joinRoom(roomId, socket.id, playerName, deckId, userId)
     if (!result) {
@@ -220,17 +255,8 @@ io.on('connection', (socket) => {
 
     const result = room.engine.playCharacter(socket.id, cardInstanceId)
     if (result.success) {
-      // 检查是否触发了检索效果
-      const effect = room.engine.pendingEffect
-      if (effect?.type === 'SEARCH' && effect.playerId === socket.id) {
-        // 发送检索弹窗数据给触发者
-        socket.emit('game:view-top-result', {
-          cards: effect.cards,
-          filter: effect.filter,
-          maxSelect: effect.maxSelect,
-          sourceCardName: effect.sourceCardName,
-        })
-      }
+      // 检查是否触发了需要交互的效果
+      broadcastPendingEffect(room, socket.id)
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
@@ -243,11 +269,14 @@ io.on('connection', (socket) => {
 
     const result = room.engine.playEvent(socket.id, cardInstanceId)
     if (result.success) {
-      // Emit effect text so player can execute manually
       socket.emit(SOCKET_EVENTS.EVENT_PLAYED, { 
         card: result.cardPlayed,
         effectText: result.effectText,
       })
+      // Check if event script created a pending effect
+      if (result.hasInteraction) {
+        broadcastPendingEffect(room, socket.id)
+      }
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
@@ -260,6 +289,21 @@ io.on('connection', (socket) => {
 
     const result = room.engine.playStage(socket.id, cardInstanceId)
     if (result.success) {
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 手动发动场上卡牌的 ACTIVATE_MAIN 效果
+  socket.on('game:activate-main', ({ cardInstanceId }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.activateMain(socket.id, cardInstanceId)
+    if (result.success) {
+      // 检查是否有需要交互的效果
+      broadcastPendingEffect(room, socket.id)
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
@@ -312,6 +356,12 @@ io.on('connection', (socket) => {
 
     const result = room.engine.declareAttack(socket.id, attackerId, targetId)
     if (result.success) {
+      // 检查 ON_ATTACK 脚本是否产生了 pendingEffect（如丢弃效果）
+      const pendingEffect = room.engine.pendingEffect
+      if (pendingEffect?.playerId === socket.id) {
+        broadcastPendingEffect(room, socket.id)
+      }
+      
       broadcastGameState(room)
       // Notify defender for blocker/counter step
       const opponent = room.players.find(p => p.socketId !== socket.id)
@@ -377,14 +427,9 @@ io.on('connection', (socket) => {
         }
       }
       
-      // 检查是否需要玩家选择目标
-      if (result.needsInteraction && result.interactionType === 'SELECT_TARGET') {
-        socket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
-          validTargets: result.validTargets,
-          message: result.message,
-          maxSelect: result.maxSelect,
-          sourceCardName: result.sourceCardName,
-        })
+      // 检查是否需要玩家交互（所有类型的 pendingEffect）
+      if (result.needsInteraction) {
+        broadcastPendingEffect(room, socket.id)
       }
       
       broadcastGameState(room)
@@ -438,7 +483,45 @@ io.on('connection', (socket) => {
           })
         }
       }
+      
+      // 检查是否有触发效果待处理
+      if (result.outcome === 'TRIGGER_PENDING' && result.pendingTrigger) {
+        const defenderId = room.engine.pendingTrigger?.playerId
+        if (defenderId) {
+          // 获取完整卡牌信息以便前端展示
+          const triggerCard = room.engine.pendingTrigger.card
+          io.to(defenderId).emit('game:trigger-prompt', {
+            cardNumber: result.pendingTrigger.cardNumber,
+            cardName: result.pendingTrigger.cardName,
+            triggerText: result.pendingTrigger.triggerText,
+            instanceId: result.pendingTrigger.instanceId,
+            // 完整卡牌信息用于展示
+            card: triggerCard ? room.engine._sanitizeCard(triggerCard) : null,
+          })
+        }
+        broadcastGameState(room)
+        return
+      }
+      
+      // 检查战斗结算后是否产生了 pendingEffect (如 ON_KO 触发的效果)
+      const pendingEffect = room.engine.pendingEffect
+      if (pendingEffect?.type === 'SELECT_TARGET' && pendingEffect.playerId) {
+        const effectOwnerSocket = io.sockets.sockets.get(pendingEffect.playerId)
+        if (effectOwnerSocket) {
+          effectOwnerSocket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
+            validTargets: pendingEffect.validTargets,
+            message: pendingEffect.message,
+            maxSelect: pendingEffect.maxSelect,
+            sourceCardName: pendingEffect.sourceCardName,
+          })
+        }
+      }
+      
       broadcastGameState(room)
+      // Check for game end
+      if (room.engine.winner) {
+        handleGameEnd(room)
+      }
     } else {
       socket.emit('error', { message: result.message })
     }
@@ -456,14 +539,9 @@ io.on('connection', (socket) => {
       return
     }
 
-    // 如果需要交互（选择目标），不自动确认
+    // 如果需要交互，广播 pendingEffect
     if (stageResult.needsInteraction) {
-      socket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
-        validTargets: stageResult.validTargets,
-        message: stageResult.message,
-        maxSelect: stageResult.maxSelect,
-        sourceCardName: stageResult.sourceCardName,
-      })
+      broadcastPendingEffect(room, socket.id)
       broadcastGameState(room)
       return
     }
@@ -497,6 +575,11 @@ io.on('connection', (socket) => {
 
     const result = room.engine.resolveSelectTarget(socket.id, selectedInstanceIds || [])
     if (result.success) {
+      // 检查是否产生了新的 pendingEffect (如 KO 后触发 ON_KO 效果)
+      const pendingEffect = room.engine.pendingEffect
+      if (pendingEffect?.playerId) {
+        broadcastPendingEffect(room, pendingEffect.playerId)
+      }
       broadcastGameState(room)
     } else {
       socket.emit('error', { message: result.message })
@@ -509,6 +592,69 @@ io.on('connection', (socket) => {
 
     const result = room.engine.skipCounter(socket.id)
     if (result.success) {
+      // 检查是否有触发效果待处理
+      if (result.outcome === 'TRIGGER_PENDING' && result.pendingTrigger) {
+        // 广播触发效果给防守方玩家选择
+        const defenderId = room.engine.pendingTrigger?.playerId
+        if (defenderId) {
+          const triggerCard = room.engine.pendingTrigger.card
+          io.to(defenderId).emit('game:trigger-prompt', {
+            cardNumber: result.pendingTrigger.cardNumber,
+            cardName: result.pendingTrigger.cardName,
+            triggerText: result.pendingTrigger.triggerText,
+            instanceId: result.pendingTrigger.instanceId,
+            card: triggerCard ? room.engine._sanitizeCard(triggerCard) : null,
+          })
+        }
+        broadcastGameState(room)
+        return
+      }
+      
+      // 检查战斗结算后是否产生了 pendingEffect (如 ON_KO 触发的效果)
+      const pendingEffect = room.engine.pendingEffect
+      if (pendingEffect?.playerId) {
+        broadcastPendingEffect(room, pendingEffect.playerId)
+      }
+      
+      broadcastGameState(room)
+      // Check for game end
+      if (room.engine.winner) {
+        handleGameEnd(room)
+      }
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // 响应触发效果（发动或跳过）
+  socket.on('game:respond-trigger', ({ activate }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.respondToTrigger(socket.id, activate)
+    if (result.success) {
+      // 检查是否还有下一个触发效果 (双重攻击时)
+      if (result.nextTrigger) {
+        const triggerCard = room.engine.pendingTrigger?.card
+        io.to(socket.id).emit('game:trigger-prompt', {
+          cardNumber: result.nextTrigger.cardNumber,
+          cardName: result.nextTrigger.cardName,
+          triggerText: result.nextTrigger.triggerText,
+          instanceId: result.nextTrigger.instanceId,
+          card: triggerCard ? room.engine._sanitizeCard(triggerCard) : null,
+        })
+        broadcastGameState(room)
+        return
+      }
+
+      // 检查触发效果执行后是否有 pendingEffect (需要选择目标)
+      if (result.hasPendingEffect || room.engine.pendingEffect) {
+        const pendingEffect = room.engine.pendingEffect
+        if (pendingEffect?.playerId) {
+          broadcastPendingEffect(room, pendingEffect.playerId)
+        }
+      }
+      
       broadcastGameState(room)
       // Check for game end
       if (room.engine.winner) {
@@ -563,6 +709,19 @@ io.on('connection', (socket) => {
 
     const result = room.engine.koTarget(socket.id, targetPlayerId, targetInstanceId)
     if (result.success) {
+      // 检查是否产生了新的 pendingEffect (ON_KO 触发)
+      const pendingEffect = room.engine.pendingEffect
+      if (pendingEffect?.type === 'SELECT_TARGET' && pendingEffect.playerId) {
+        const effectOwnerSocket = io.sockets.sockets.get(pendingEffect.playerId)
+        if (effectOwnerSocket) {
+          effectOwnerSocket.emit(SOCKET_EVENTS.SELECT_TARGET_PROMPT, {
+            validTargets: pendingEffect.validTargets,
+            message: pendingEffect.message,
+            maxSelect: pendingEffect.maxSelect,
+            sourceCardName: pendingEffect.sourceCardName,
+          })
+        }
+      }
       broadcastGameState(room)
     }
   })
@@ -661,35 +820,39 @@ io.on('connection', (socket) => {
     }
   })
 
-  // VIEW TOP DECK
+  // VIEW TOP DECK (只允许效果触发时使用)
   socket.on(SOCKET_EVENTS.VIEW_TOP_DECK, ({ count }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room?.engine) return
-
+    
+    // 检查是否有待决效果（只允许效果触发时使用）
+    if (!room.engine.pendingEffect || room.engine.pendingEffect.type !== 'SEARCH') {
+      socket.emit('error', { message: '只能在效果触发时查看牌组顶' })
+      return
+    }
+    
     const result = room.engine.viewTopDeck(socket.id, count || 1)
     if (result.success) {
-      // Only send the viewed cards to the requesting player
       socket.emit('game:view-top-result', { cards: result.cards })
     } else {
       socket.emit('error', { message: result.message })
     }
   })
 
-  // RESOLVE SEARCH (after viewing top cards)
+  // RESOLVE SEARCH (只允许效果触发时使用)
   socket.on(SOCKET_EVENTS.RESOLVE_SEARCH, ({ selectedIds, bottomIds }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room?.engine) return
-
+    
     const result = room.engine.resolveSearch(socket.id, selectedIds || [], bottomIds || [])
     if (result.success) {
       // 通知对手检索了哪些卡
-      if (selectedIds.length > 0) {
+      if (selectedIds && selectedIds.length > 0) {
         const player = room.engine._getPlayer(socket.id)
         const opponent = room.engine._getOpponent(socket.id)
         if (opponent) {
           const oppSocket = io.sockets.sockets.get(opponent.id)
           if (oppSocket) {
-            // 从手牌末尾取刚加入的卡牌信息
             const addedCards = (player?.hand || []).slice(-selectedIds.length)
             oppSocket.emit('search:revealed', {
               cards: addedCards.map(c => ({
@@ -733,11 +896,17 @@ io.on('connection', (socket) => {
     }
   })
 
-  // SEARCH DECK (with filter)
+  // SEARCH DECK (只允许效果触发时使用)
   socket.on(SOCKET_EVENTS.SEARCH_DECK, ({ filter }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room?.engine) return
-
+    
+    // 检查是否有待决效果（只允许效果触发时使用）
+    if (!room.engine.pendingEffect) {
+      socket.emit('error', { message: '只能在效果触发时检索牌组' })
+      return
+    }
+    
     const result = room.engine.searchDeckFiltered(socket.id, filter || {})
     if (result.success) {
       socket.emit('game:search-result', { cards: result.cards })
@@ -746,11 +915,17 @@ io.on('connection', (socket) => {
     }
   })
 
-  // PICK FROM DECK (after search)
+  // PICK FROM DECK (只允许效果触发时使用)
   socket.on(SOCKET_EVENTS.PICK_FROM_DECK, ({ cardInstanceId }) => {
     const room = roomManager.getRoomBySocket(socket.id)
     if (!room?.engine) return
-
+    
+    // 检查是否有待决效果（只允许效果触发时使用）
+    if (!room.engine.pendingEffect) {
+      socket.emit('error', { message: '只能在效果触发时从牌组选取卡牌' })
+      return
+    }
+    
     const result = room.engine.pickFromDeck(socket.id, cardInstanceId)
     if (result.success) {
       broadcastGameState(room)
@@ -778,6 +953,37 @@ io.on('connection', (socket) => {
     if (!room?.engine) return
 
     const result = room.engine.resolveEffectTarget(socket.id, targetInstanceId)
+    if (result.success) {
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // RESOLVE DISCARD (玩家选择丢弃的手牌)
+  socket.on('game:resolve-discard', ({ cardInstanceIds }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.resolveDiscard(socket.id, cardInstanceIds || [])
+    if (result.success) {
+      // 检查是否有新的 pendingEffect (如 RECOVER_FROM_TRASH)
+      const pe = room.engine.pendingEffect
+      if (pe) {
+        broadcastPendingEffect(room, socket.id)
+      }
+      broadcastGameState(room)
+    } else {
+      socket.emit('error', { message: result.message })
+    }
+  })
+
+  // RESOLVE RECOVER (玩家选择从废弃区回收的卡牌)
+  socket.on('game:resolve-recover', ({ cardInstanceIds }) => {
+    const room = roomManager.getRoomBySocket(socket.id)
+    if (!room?.engine) return
+
+    const result = room.engine.resolveRecover(socket.id, cardInstanceIds || [])
     if (result.success) {
       broadcastGameState(room)
     } else {
@@ -834,15 +1040,16 @@ io.on('connection', (socket) => {
 // HELPER FUNCTIONS
 // =====================
 
-async function startGame(room) {
-  console.log(`[DEBUG] startGame called for room ${room.id}`)
+async function startGame(room, options = {}) {
+  const { useTestDeck = false } = options
+  console.log(`[DEBUG] startGame called for room ${room.id}, useTestDeck: ${useTestDeck}`)
   try {
     console.log(`[DEBUG] Creating GameEngine...`)
     const engine = new GameEngine(room)
     console.log(`[DEBUG] GameEngine created, setting room engine...`)
     roomManager.setEngine(room.id, engine)
     console.log(`[DEBUG] Starting game (async)...`)
-    const initialState = await engine.startGame()
+    const initialState = await engine.startGame({ useTestDeck })
     console.log(`[DEBUG] Game started, broadcasting to players...`)
 
     room.players.forEach((player) => {
@@ -867,6 +1074,65 @@ function broadcastGameState(room) {
     const state = room.engine.getStateForPlayer(player.socketId)
     io.to(player.socketId).emit(SOCKET_EVENTS.GAME_UPDATE, state)
   })
+}
+
+/**
+ * 广播 pendingEffect 给对应玩家
+ * 根据 pendingEffect 的类型发送不同事件
+ */
+function broadcastPendingEffect(room, socketId) {
+  const effect = room.engine.pendingEffect
+  if (!effect) return false
+  if (effect.playerId !== socketId) {
+    return false
+  }
+
+  switch (effect.type) {
+    case 'SEARCH':
+      io.to(socketId).emit('game:view-top-result', {
+        cards: effect.cards,
+        filter: effect.filter,
+        maxSelect: effect.maxSelect,
+        sourceCardName: effect.sourceCardName,
+      })
+      break
+    case 'SELECT_TARGET':
+    case 'KO_TARGET':
+    case 'ATTACH_DON':
+      io.to(socketId).emit('game:select-target-prompt', {
+        type: effect.type,
+        validTargets: effect.validTargets || [],
+        message: effect.message || '选择目标',
+        maxSelect: effect.maxSelect || 1,
+        sourceCardName: effect.sourceCardName || '',
+        optional: effect.optional ?? false,
+      })
+      break
+    case 'DISCARD':
+      io.to(socketId).emit('game:discard-prompt', {
+        type: 'DISCARD',
+        validCards: effect.validCards || [],
+        count: effect.count || 1,
+        message: effect.message || '丢弃手牌',
+        optional: effect.optional ?? false,
+        sourceCardName: effect.sourceCardName || '',
+      })
+      break
+    case 'RECOVER_FROM_TRASH':
+      io.to(socketId).emit('game:recover-prompt', {
+        type: 'RECOVER_FROM_TRASH',
+        validCards: effect.validCards || [],
+        maxSelect: effect.maxSelect || 1,
+        message: effect.message || '从废弃区选择卡牌',
+        optional: effect.optional ?? false,
+        sourceCardName: effect.sourceCardName || '',
+      })
+      break
+    default:
+      console.log(`[pendingEffect] Unknown type: ${effect.type}`)
+      return false
+  }
+  return true
 }
 
 function handleGameEnd(room) {

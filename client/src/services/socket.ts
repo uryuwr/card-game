@@ -157,6 +157,11 @@ class SocketService {
     this.socket?.emit('game:activate-ability', { cardId, targets })
   }
 
+  /** Activate a card's ACTIVATE_MAIN effect (manually triggered) */
+  activateMain(cardInstanceId: string) {
+    this.socket?.emit('game:activate-main', { cardInstanceId })
+  }
+
   // =====================
   // GAME ACTIONS - BATTLE PHASE
   // =====================
@@ -278,6 +283,21 @@ class SocketService {
     this.socket?.emit('game:select-target-result', { selectedInstanceIds })
   }
 
+  /** Respond to trigger effect prompt (activate or skip) */
+  respondToTrigger(activate: boolean) {
+    this.socket?.emit('game:respond-trigger', { activate })
+  }
+
+  /** Resolve discard prompt (select cards to discard) */
+  resolveDiscard(cardInstanceIds: string[]) {
+    this.socket?.emit('game:resolve-discard', { cardInstanceIds })
+  }
+
+  /** Resolve recover from trash prompt (select cards to recover) */
+  resolveRecover(cardInstanceIds: string[]) {
+    this.socket?.emit('game:resolve-recover', { cardInstanceIds })
+  }
+
   /** Take a Life card and add to hand */
   lifeToHand(lifeIndex: number = 0) {
     this.socket?.emit('game:life-to-hand', { lifeIndex })
@@ -356,3 +376,8 @@ class SocketService {
 }
 
 export const socketService = new SocketService()
+
+// 暴露到 window 以便于测试
+if (typeof window !== 'undefined') {
+  (window as any).socketService = socketService
+}

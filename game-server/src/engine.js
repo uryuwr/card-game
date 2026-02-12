@@ -16,7 +16,7 @@ import {
   BATTLE_STEPS,
   KEYWORDS,
 } from '../../shared/constants.js'
-import { getCardPool, buildDeckFromCards, fetchDeckFromAPI } from './cards.js'
+import { getCardPool, buildDeckFromCards, fetchDeckFromAPI, getTestDeck } from './cards.js'
 import { ScriptEngine, TRIGGER_TYPES } from './script-engine/index.js'
 
 export class GameEngine {
@@ -32,6 +32,7 @@ export class GameEngine {
     this.stagedCounterCards = []    // 暂存的反击卡（可撤销）
     this.activeEffects = []         // 当前生效中的效果（带过期条件）
     this.pendingEffect = null
+    this.pendingTrigger = null      // 等待响应的生命牌触发效果 { card, playerId, damageResult }
     this.winner = null
     this.actionLog = []
     this.scriptEngine = new ScriptEngine(this)
@@ -52,9 +53,12 @@ export class GameEngine {
 
   /**
    * Initialize and start the game (async version using real deck data)
+   * @param {Object} options - Game options
+   * @param {boolean} options.useTestDeck - Use test decks for easier testing
    */
-  async startGame() {
-    console.log('[ENGINE] startGame called')
+  async startGame(options = {}) {
+    const { useTestDeck = false } = options
+    console.log('[ENGINE] startGame called, useTestDeck:', useTestDeck)
     
     // Build players from their actual decks
     this.players = []
@@ -64,8 +68,17 @@ export class GameEngine {
       
       let leaderCard, deckCards, lifeCount
       
-      // Try to fetch the player's actual deck from API
-      if (p.deckId) {
+      // 测试模式：使用预定义测试卡组
+      if (useTestDeck) {
+        console.log('[ENGINE] Using TEST DECK for player', index)
+        const testDeckData = getTestDeck(index)
+        leaderCard = testDeckData.leader
+        deckCards = testDeckData.deck
+        lifeCount = leaderCard.life || 5
+        console.log('[ENGINE] Test deck loaded:', testDeckData.name, 'with', deckCards.length, 'cards')
+      }
+      // 正常模式：尝试从 API 获取玩家卡组
+      else if (p.deckId) {
         const deckData = await fetchDeckFromAPI(p.deckId)
         if (deckData && deckData.leader && deckData.deck.length > 0) {
           console.log('[ENGINE] Loaded deck:', deckData.name, 'with', deckData.deck.length, 'cards')
@@ -87,7 +100,7 @@ export class GameEngine {
         lifeCount = leaderCard?.life || 5
       }
       
-      console.log('[ENGINE] Leader card:', leaderCard?.cardNumber, 'Deck size:', deckCards.length)
+      console.log('[ENGINE] Leader card:', leaderCard?.cardNumber, 'Deck size:', deckCards.length, 'traitCn:', leaderCard?.traitCn)
       
       // Split deck into main deck and life area
       const shuffledDeck = this._shuffle([...deckCards])
@@ -227,6 +240,14 @@ export class GameEngine {
     if (this.phase !== GAME_PHASES.MAIN && this.phase !== GAME_PHASES.BATTLE) {
       return { success: false, message: 'Cannot end turn now' }
     }
+    // 战斗中（有未结算的攻击）不能结束回合
+    if (this.pendingAttack) {
+      return { success: false, message: '战斗结算中，无法结束回合' }
+    }
+    // 有待处理的效果时不能结束回合
+    if (this.pendingEffect) {
+      return { success: false, message: '请先处理当前效果' }
+    }
     this._runEndPhase()
     this._nextTurn()
     return { success: true }
@@ -254,6 +275,9 @@ export class GameEngine {
 
     // 3. Clear temporary power modifiers
     player.powerMods.clear()
+
+    // 4. Reset once-per-turn effect usage (山智等卡的效果每回合可用一次)
+    player.usedOncePerTurn = {}
 
     this._log(`Refresh Phase: ${player.name} refreshes all cards, ${returnedDon} DON!! returned`)
   }
@@ -368,12 +392,16 @@ export class GameEngine {
 
     // Move card to field
     player.hand.splice(cardIndex, 1)
-    const hasRush = this._hasKeyword(card, KEYWORDS.RUSH)
+    // 检查是否有固有速攻（不是条件速攻）
+    // 如果卡牌文本有速攻字样，但实际上是条件速攻（通过 dynamicKeywords 定义），则不算固有速攻
+    const hasRushText = this._hasKeyword(card, KEYWORDS.RUSH)
+    const hasConditionalRush = this.scriptEngine.hasConditionalKeyword(card, KEYWORDS.RUSH)
+    const hasInherentRush = hasRushText && !hasConditionalRush
     player.characters.push({
       card,
       attachedDon: 0,
       state: CARD_STATES.ACTIVE,
-      canAttackThisTurn: hasRush, // Rush allows immediate attack
+      canAttackThisTurn: hasInherentRush, // 只有固有速攻才允许立即攻击
     })
 
     this._log(`${player.name} plays ${card.nameCn || card.name} (Cost: ${cost})`)
@@ -398,6 +426,67 @@ export class GameEngine {
     }
 
     return { success: true, cardPlayed: card }
+  }
+
+  /**
+   * Activate a card's ACTIVATE_MAIN effect (manually triggered)
+   * @param {string} socketId - Player socket ID
+   * @param {string} cardInstanceId - Card instance ID (on field)
+   */
+  activateMain(socketId, cardInstanceId) {
+    const player = this._getPlayer(socketId)
+    if (!player || !this._isCurrentTurn(socketId) || this.phase !== GAME_PHASES.MAIN) {
+      return { success: false, message: 'Cannot activate now' }
+    }
+
+    // 检查是否有待决效果
+    if (this.pendingEffect) {
+      return { success: false, message: 'Resolve current effect first' }
+    }
+
+    const opponent = this._getOpponent(socketId)
+    
+    // 找到目标卡牌（领袖或角色）
+    let card = null
+    let slot = null
+    
+    if (player.leader.card.instanceId === cardInstanceId) {
+      card = player.leader.card
+      slot = player.leader
+    } else {
+      slot = player.characters.find(c => c.card.instanceId === cardInstanceId)
+      if (slot) card = slot.card
+    }
+    
+    if (!card) {
+      return { success: false, message: 'Card not found on field' }
+    }
+    
+    // 检查卡牌是否有 ACTIVATE_MAIN 效果
+    if (!this.scriptEngine.hasScriptTrigger(card, 'ACTIVATE_MAIN')) {
+      return { success: false, message: 'Card has no ACTIVATE_MAIN effect' }
+    }
+    
+    // 执行 ACTIVATE_MAIN 效果
+    const scriptResults = this.scriptEngine.executeTrigger(TRIGGER_TYPES.ACTIVATE_MAIN, {
+      sourceCard: card,
+      sourceSlot: slot,
+      player,
+      opponent,
+    })
+    
+    const executed = scriptResults.some(r => r.executed)
+    if (!executed) {
+      return { success: false, message: 'Effect conditions not met' }
+    }
+    
+    this._log(`${player.name} activates ${card.nameCn || card.name} effect`)
+    
+    return { 
+      success: true, 
+      cardActivated: card,
+      hasInteraction: this.pendingEffect !== null,
+    }
   }
 
   /**
@@ -432,9 +521,29 @@ export class GameEngine {
     player.hand.splice(cardIndex, 1)
     player.trash.push(card)
 
-    this._log(`${player.name} plays Event: ${card.nameCn || card.name} -> Effect: Execute manually`)
-    
-    return { success: true, cardPlayed: card, effectText: card.effect }
+    this._log(`${player.name} plays Event: ${card.nameCn || card.name}`)
+
+    // Execute ACTIVATE_MAIN script if the event card has one
+    const opponent = this._getOpponent(socketId)
+    if (this.scriptEngine.hasScriptTrigger(card, 'ACTIVATE_MAIN')) {
+      // Temporarily register and execute script
+      this.scriptEngine.registerCard(card, card.instanceId, player.id)
+      this.scriptEngine.executeTrigger(TRIGGER_TYPES.ACTIVATE_MAIN, {
+        sourceCard: card,
+        sourceSlot: null,
+        player,
+        opponent,
+      })
+      this.scriptEngine.unregisterCard(card.instanceId)
+      this._log(`${card.nameCn || card.name}: ACTIVATE_MAIN effect executed`)
+    }
+
+    return {
+      success: true,
+      cardPlayed: card,
+      effectText: card.effect,
+      hasInteraction: this.pendingEffect !== null,
+    }
   }
 
   /**
@@ -525,7 +634,8 @@ export class GameEngine {
     const player = this._getPlayer(socketId)
     const effect = this.pendingEffect
     
-    if (!effect || effect.type !== 'SELECT_TARGET') {
+    const validEffectTypes = ['SELECT_TARGET', 'KO_TARGET', 'ATTACH_DON']
+    if (!effect || !validEffectTypes.includes(effect.type)) {
       return { success: false, message: 'No pending selection' }
     }
     
@@ -546,18 +656,226 @@ export class GameEngine {
       }
     }
     
-    // 执行 onSelectActions（效果会直接更新 pendingAttack.targetPower）
-    const results = this.scriptEngine.executeOnSelectActions(selectedInstanceIds, effect)
+    // 根据效果类型执行不同操作
+    const effectType = effect.type
+    this.pendingEffect = null  // 清除当前待决效果（在执行前）
     
-    this._log(`${player.name} 选择了 ${selectedInstanceIds.length} 个目标执行效果`)
+    let results = null
     
-    // 清除待决效果
-    this.pendingEffect = null
+    switch (effectType) {
+      case 'SELECT_TARGET':
+        // 执行 onSelectActions（效果会直接更新 pendingAttack.targetPower）
+        results = this.scriptEngine.executeOnSelectActions(selectedInstanceIds, effect)
+        this._log(`${player.name} 选择了 ${selectedInstanceIds.length} 个目标执行效果`)
+        break
+        
+      case 'KO_TARGET':
+        // 执行 KO 操作
+        for (const targetId of selectedInstanceIds) {
+          this._koCharacterById(targetId, effect)
+        }
+        this._log(`${player.name} 选择 KO 了 ${selectedInstanceIds.length} 个目标`)
+        break
+        
+      case 'ATTACH_DON':
+        // 执行贴 DON 操作
+        // donCount 是总共要贴的DON数量，如果选了多个目标则平分
+        const donCount = effect.donCount || effect.count || 1
+        const donPerTarget = selectedInstanceIds.length > 0 
+          ? Math.floor(donCount / selectedInstanceIds.length) 
+          : donCount
+        const remainder = donCount % selectedInstanceIds.length
+        
+        for (let i = 0; i < selectedInstanceIds.length; i++) {
+          const targetId = selectedInstanceIds[i]
+          // 第一个目标获得额外的余数DON
+          const count = i === 0 ? donPerTarget + remainder : donPerTarget
+          if (count > 0) {
+            this._attachDonToTarget(player, targetId, count, effect.donState || 'rested')
+          }
+        }
+        this._log(`${player.name} 选择了 ${selectedInstanceIds.length} 个目标贴了 ${donCount} DON`)
+        break
+    }
     
     return { 
       success: true, 
       results,
       newTargetPower: this.pendingAttack?.targetPower,
+    }
+  }
+
+  /**
+   * Resolve discard effect: player discards cards from hand
+   * @param {string} socketId - Player socket ID
+   * @param {string[]} cardInstanceIds - Cards to discard
+   */
+  resolveDiscard(socketId, cardInstanceIds) {
+    const player = this._getPlayer(socketId)
+    const effect = this.pendingEffect
+
+    if (!effect || effect.type !== 'DISCARD') {
+      return { success: false, message: 'No pending discard effect' }
+    }
+
+    if (effect.playerId !== player.id) {
+      return { success: false, message: 'Not your pending effect' }
+    }
+
+    // 验证选择数量
+    if (cardInstanceIds.length !== effect.count) {
+      return { success: false, message: `需要丢弃 ${effect.count} 张卡` }
+    }
+
+    // 验证并移除手牌
+    const discardedCards = []
+    for (const id of cardInstanceIds) {
+      const cardIndex = player.hand.findIndex(c => c.instanceId === id)
+      if (cardIndex === -1) {
+        return { success: false, message: '手牌中找不到该卡' }
+      }
+      const [card] = player.hand.splice(cardIndex, 1)
+      player.trash.push(card)
+      discardedCards.push(card)
+    }
+
+    this._log(`${player.name} 丢弃了 ${discardedCards.map(c => c.nameCn || c.name).join(', ')}`)
+
+    // 保存 onDiscard actions 并清除当前 effect
+    const onDiscardActions = effect.onDiscardActions || []
+    const sourceInfo = {
+      sourceCardNumber: effect.sourceCardNumber,
+      sourceCardName: effect.sourceCardName,
+      playerId: effect.playerId,
+    }
+    this.pendingEffect = null
+
+    // 执行 onDiscard 回调（如果有）
+    if (onDiscardActions.length > 0) {
+      const opponent = this._getOpponent(socketId)
+      this.scriptEngine.executeOnDiscardActions(onDiscardActions, sourceInfo, player, opponent, discardedCards)
+    }
+
+    return { 
+      success: true, 
+      discardedCards,
+      hasPendingEffect: !!this.pendingEffect,
+    }
+  }
+
+  /**
+   * Resolve recover from trash effect: player selects cards to recover
+   * @param {string} socketId - Player socket ID
+   * @param {string[]} cardInstanceIds - Cards to recover
+   */
+  resolveRecover(socketId, cardInstanceIds) {
+    const player = this._getPlayer(socketId)
+    const effect = this.pendingEffect
+
+    if (!effect || effect.type !== 'RECOVER_FROM_TRASH') {
+      return { success: false, message: 'No pending recover effect' }
+    }
+
+    if (effect.playerId !== player.id) {
+      return { success: false, message: 'Not your pending effect' }
+    }
+
+    // 验证选择数量
+    if (cardInstanceIds.length > (effect.maxSelect || 1)) {
+      return { success: false, message: `最多选择 ${effect.maxSelect || 1} 张卡` }
+    }
+
+    // 验证并从废弃区回收
+    const validIds = effect.validCards.map(c => c.instanceId)
+    const recoveredCards = []
+    for (const id of cardInstanceIds) {
+      if (!validIds.includes(id)) {
+        return { success: false, message: '选择的卡不在有效列表中' }
+      }
+      const cardIndex = player.trash.findIndex(c => c.instanceId === id)
+      if (cardIndex === -1) {
+        return { success: false, message: '废弃区中找不到该卡' }
+      }
+      const [card] = player.trash.splice(cardIndex, 1)
+      player.hand.push(card)
+      recoveredCards.push(card)
+    }
+
+    this._log(`${player.name} 从废弃区回收了 ${recoveredCards.map(c => c.nameCn || c.name).join(', ')}`)
+    this.pendingEffect = null
+
+    return { 
+      success: true, 
+      recoveredCards,
+    }
+  }
+
+  /**
+   * KO a character by instance ID
+   * @private
+   */
+  _koCharacterById(instanceId, effect) {
+    const effectOwner = this.players.find(p => p.id === effect.playerId)
+    const opponent = this.players.find(p => p.id !== effect.playerId)
+    const slotIndex = opponent.characters.findIndex(c => c.card.instanceId === instanceId)
+    if (slotIndex === -1) return
+    
+    const slot = opponent.characters[slotIndex]
+    const card = slot.card
+    
+    // 触发 ON_KO 效果（在移除前触发，因为需要 slot 信息）
+    console.log(`[Engine] ON_KO trigger for ${card.cardNumber} (${card.nameCn})`)
+    this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_KO, {
+      sourceCard: card,
+      sourceSlot: slot,
+      player: opponent,  // 被 KO 卡牌的所有者
+      opponent: effectOwner,  // 效果发动者
+    })
+    
+    // 归还附着的 DON 到费用区
+    if (slot.attachedDon > 0) {
+      opponent.donRested += slot.attachedDon
+      this._log(`${slot.attachedDon} attached DON!! returned to cost area`)
+    }
+    
+    // 注销脚本
+    this.scriptEngine.unregisterCard(instanceId)
+    
+    // 移除角色
+    opponent.characters.splice(slotIndex, 1)
+    opponent.trash.push(card)
+    
+    this._log(`${card.nameCn || card.name} 被 KO`)
+  }
+
+  /**
+   * Attach DON to a target (leader or character)
+   * @private
+   */
+  _attachDonToTarget(player, targetId, count, donState) {
+    // 检查是否有足够的 DON 可用
+    const available = donState === 'rested' ? player.donRested : player.donActive
+    if (available < count) return
+    
+    // 找到目标
+    if (targetId === 'leader' || player.leader.card.instanceId === targetId) {
+      player.leader.attachedDon += count
+      if (donState === 'rested') {
+        player.donRested -= count
+      } else {
+        player.donActive -= count
+      }
+      return
+    }
+    
+    const slot = player.characters.find(c => c.card.instanceId === targetId)
+    if (slot) {
+      slot.attachedDon += count
+      if (donState === 'rested') {
+        player.donRested -= count
+      } else {
+        player.donActive -= count
+      }
     }
   }
 
@@ -765,6 +1083,19 @@ export class GameEngine {
       if (charSlot.state !== CARD_STATES.ACTIVE) {
         return { success: false, message: 'Character is rested' }
       }
+      // 检查是否可以在本回合攻击（非速攻角色登场当回合不能攻击）
+      // 但如果有条件速攻（dynamicKeywords）且条件满足，则允许攻击
+      if (!charSlot.canAttackThisTurn) {
+        // 检查是否有动态速攻（如 OP02-008）
+        console.log(`[declareAttack] ${charSlot.card.cardNumber} canAttackThisTurn=false, checking dynamic Rush...`)
+        console.log(`[declareAttack] slot.attachedDon=${charSlot.attachedDon}, player.life=${player.life.length}`)
+        const hasDynamicRush = this._hasDynamicKeyword(charSlot.card, charSlot, player, KEYWORDS.RUSH)
+        console.log(`[declareAttack] hasDynamicRush=${hasDynamicRush}`)
+        if (!hasDynamicRush) {
+          return { success: false, message: '角色登场当回合不能攻击（除非有速攻）' }
+        }
+        console.log(`[declareAttack] ${charSlot.card.cardNumber} has dynamic Rush, allowing attack`)
+      }
       attacker = charSlot.card
       attackerSlot = charSlot
     }
@@ -821,6 +1152,10 @@ export class GameEngine {
     })
 
     // Check if opponent has blockers (在脚本执行后，可能被 ignoreBlocker 覆盖)
+    // Also check attacker's fieldStates.cannotBeBlocked (set by 恶魔风脚 etc.)
+    if (attackerSlot.fieldStates?.cannotBeBlocked) {
+      this.pendingAttack.ignoreBlocker = true
+    }
     const hasBlockers = !this.pendingAttack.ignoreBlocker && opponent.characters.some(
       c => c.state === CARD_STATES.ACTIVE && this._hasKeyword(c.card, KEYWORDS.BLOCKER)
     )
@@ -1009,14 +1344,16 @@ export class GameEngine {
     this.stagedCounterCards.push(stagedEntry)
     
     // 5. 检查是否需要玩家交互
-    if (this.pendingEffect?.type === 'SELECT_TARGET') {
+    if (this.pendingEffect) {
       return { 
         success: true, 
         needsInteraction: true, 
-        interactionType: 'SELECT_TARGET',
+        interactionType: this.pendingEffect.type,
         validTargets: this.pendingEffect.validTargets,
+        validCards: this.pendingEffect.validCards,
         message: this.pendingEffect.message,
         maxSelect: this.pendingEffect.maxSelect,
+        count: this.pendingEffect.count,
         sourceCardName: card.nameCn || card.name,
         cardStaged: card,
         stagedCounterCards: this.stagedCounterCards,
@@ -1241,9 +1578,40 @@ export class GameEngine {
             const lifeCard = defender.life.pop()
             lifeCard.faceDown = false
             
-            // Check for Trigger effect
+            // Check for Trigger effect - 检查是否有触发效果脚本
+            const hasScriptTrigger = lifeCard.trigger && this._hasTriggerScript(lifeCard.cardNumber)
+            
+            if (hasScriptTrigger && !attack.hasBanish) {
+              // 有触发效果且未被banish，设置 pendingTrigger 让玩家选择
+              this._log(`[Trigger] ${lifeCard.nameCn || lifeCard.name} 翻开! 可选择发动触发效果`)
+              this.pendingTrigger = {
+                card: lifeCard,
+                playerId: defender.id,
+                triggerText: lifeCard.trigger,
+                // 保存战斗状态以便继续处理
+                battleContext: {
+                  attackerPower: attack.attackerPower,
+                  targetPower: attack.targetPower,
+                  remainingDamage: damage - i - 1,  // 剩余伤害（双重攻击时）
+                  hasBanish: attack.hasBanish,
+                },
+              }
+              result.outcome = 'TRIGGER_PENDING'
+              result.pendingTrigger = {
+                cardNumber: lifeCard.cardNumber,
+                cardName: lifeCard.nameCn || lifeCard.name,
+                triggerText: lifeCard.trigger,
+                instanceId: lifeCard.instanceId,
+              }
+              result.lifeRemaining = defender.life.length
+              
+              // 暂停处理，等待玩家响应
+              return result
+            }
+            
+            // 无触发效果或被 banish，正常处理
             if (lifeCard.trigger) {
-              this._log(`[Trigger] ${lifeCard.nameCn || lifeCard.name}: ${lifeCard.trigger}`)
+              this._log(`[Trigger] ${lifeCard.nameCn || lifeCard.name}: ${lifeCard.trigger} (无脚本实现)`)
               result.triggerCard = lifeCard
             }
             
@@ -1271,12 +1639,15 @@ export class GameEngine {
         const targetSlot = defender.characters.find(c => c.card.instanceId === attack.targetInstanceId)
         if (targetSlot) {
           // 触发 ON_KO 脚本
-          this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_KO, {
+          console.log(`[Engine] ON_KO trigger for ${targetSlot.card.cardNumber} (${targetSlot.card.nameCn})`)
+          const onKoResults = this.scriptEngine.executeTrigger(TRIGGER_TYPES.ON_KO, {
             sourceCard: targetSlot.card,
             sourceSlot: targetSlot,
             player: defender,
             opponent: attacker,
           })
+          console.log(`[Engine] ON_KO results:`, JSON.stringify(onKoResults))
+          console.log(`[Engine] pendingEffect after ON_KO:`, this.pendingEffect ? JSON.stringify(this.pendingEffect).slice(0, 200) : 'null')
 
           // 归还附着的 DON 到费用区
           if (targetSlot.attachedDon > 0) {
@@ -1310,6 +1681,113 @@ export class GameEngine {
     this.pendingCounterPower = 0
     this.stagedCounterCards = []
 
+    return result
+  }
+
+  /**
+   * 响应生命牌触发效果
+   * @param {string} socketId - 玩家ID
+   * @param {boolean} activate - 是否发动触发效果
+   * @returns {object} - { success, message, ... }
+   */
+  respondToTrigger(socketId, activate) {
+    const trigger = this.pendingTrigger
+    if (!trigger) {
+      return { success: false, message: 'No pending trigger' }
+    }
+    if (trigger.playerId !== socketId) {
+      return { success: false, message: 'Not your trigger' }
+    }
+
+    const player = this._getPlayer(socketId)
+    const opponent = this._getOpponent(socketId)
+    const card = trigger.card
+
+    let result = {
+      success: true,
+      activated: activate,
+      cardNumber: card.cardNumber,
+      cardName: card.nameCn || card.name,
+    }
+
+    if (activate) {
+      // 发动触发效果
+      this._log(`[Trigger] ${card.nameCn || card.name} 触发效果发动!`)
+      
+      // 执行 TRIGGER 脚本
+      const triggerResults = this.scriptEngine.executeTrigger(TRIGGER_TYPES.TRIGGER, {
+        sourceCard: card,
+        player: player,
+        opponent: opponent,
+      })
+      
+      console.log(`[Engine] TRIGGER results:`, JSON.stringify(triggerResults))
+      result.scriptResults = triggerResults
+      
+      // 检查是否有需要玩家交互的效果
+      if (this.pendingEffect) {
+        result.hasPendingEffect = true
+      }
+      
+      // 发动触发效果后，卡牌进入墓地
+      player.trash.push(card)
+      this._log(`${card.nameCn || card.name} 进入废弃区`)
+    } else {
+      // 跳过触发效果，卡牌加入手牌
+      this._log(`[Trigger] ${card.nameCn || card.name} 触发效果被跳过`)
+      player.hand.push(card)
+      this._log(`${card.nameCn || card.name} 加入手牌`)
+    }
+
+    // 检查是否还有剩余伤害要处理（双重攻击）
+    const ctx = trigger.battleContext
+    if (ctx.remainingDamage > 0 && player.life.length > 0) {
+      // 继续处理剩余伤害
+      const nextLifeCard = player.life.pop()
+      nextLifeCard.faceDown = false
+      
+      const hasScriptTrigger = nextLifeCard.trigger && this._hasTriggerScript(nextLifeCard.cardNumber)
+      
+      if (hasScriptTrigger && !ctx.hasBanish) {
+        // 下一张生命牌也有触发效果
+        this._log(`[Trigger] ${nextLifeCard.nameCn || nextLifeCard.name} 翻开! 可选择发动触发效果`)
+        this.pendingTrigger = {
+          card: nextLifeCard,
+          playerId: player.id,
+          triggerText: nextLifeCard.trigger,
+          battleContext: {
+            ...ctx,
+            remainingDamage: ctx.remainingDamage - 1,
+          },
+        }
+        result.nextTrigger = {
+          cardNumber: nextLifeCard.cardNumber,
+          cardName: nextLifeCard.nameCn || nextLifeCard.name,
+          triggerText: nextLifeCard.trigger,
+          instanceId: nextLifeCard.instanceId,
+        }
+        return result
+      }
+      
+      // 无触发效果，直接加入手牌
+      if (nextLifeCard.trigger) {
+        this._log(`[Trigger] ${nextLifeCard.nameCn || nextLifeCard.name}: ${nextLifeCard.trigger} (无脚本实现)`)
+      }
+      player.hand.push(nextLifeCard)
+      this._log(`${nextLifeCard.nameCn || nextLifeCard.name} 加入手牌`)
+    }
+
+    // 清除 pendingTrigger
+    this.pendingTrigger = null
+    
+    // 清理战斗状态（如果所有伤害处理完毕）
+    this._expireEffects('END_OF_BATTLE')
+    this.pendingAttack = null
+    this.battleStep = BATTLE_STEPS.NONE
+    this.pendingCounterPower = 0
+    this.stagedCounterCards = []
+    
+    result.lifeRemaining = player.life.length
     return result
   }
 
@@ -1860,6 +2338,13 @@ export class GameEngine {
       currentTurn: this.players[this.currentTurnIndex]?.id,
       pendingAttack: this.pendingAttack,
       pendingEffect: this.pendingEffect,
+      pendingTrigger: this.pendingTrigger ? {
+        cardNumber: this.pendingTrigger.card?.cardNumber,
+        cardName: this.pendingTrigger.card?.nameCn || this.pendingTrigger.card?.name,
+        triggerText: this.pendingTrigger.triggerText,
+        playerId: this.pendingTrigger.playerId,
+        card: this.pendingTrigger.card ? this._sanitizeCard(this.pendingTrigger.card) : null,
+      } : null,
       pendingCounterPower: this.pendingCounterPower, // 当前累计的反击力量
       stagedCounterCards: this.stagedCounterCards,   // 暂存的反击卡（可撤销）
       activeEffects: this.activeEffects,             // 当前生效中的效果
@@ -1873,6 +2358,7 @@ export class GameEngine {
           attachedDon: p.leader.attachedDon,
           state: p.leader.state,
           power: this._calculatePower(p.leader.card, p.leader, p),
+          hasActivateMain: this.scriptEngine.canActivateMain(p.leader.card, p),
         },
         characters: p.characters.map(c => ({
           card: this._sanitizeCard(c.card),
@@ -1880,6 +2366,7 @@ export class GameEngine {
           state: c.state,
           canAttackThisTurn: c.canAttackThisTurn,
           power: this._calculatePower(c.card, c, p),
+          hasActivateMain: this.scriptEngine.canActivateMain(c.card, p),
         })),
         stage: p.stage ? { card: this._sanitizeCard(p.stage.card) } : null,
         lifeCount: p.life.length,
@@ -1928,9 +2415,11 @@ export class GameEngine {
       counter: card.counter,
       life: card.life,
       attribute: card.attribute,
+      attributeCn: card.attributeCn,
       effect: card.effect,
       trigger: card.trigger,
       trait: card.trait,
+      traitCn: card.traitCn,
       rarity: card.rarity,
       imageUrl: card.imageUrl,
       effectScript: card.effectScript,
@@ -1960,8 +2449,14 @@ export class GameEngine {
         }
       }
     }
+
+    // CONSTANT 效果的动态力量（如 P-006 路飞）
+    let dynamicPowerBonus = 0
+    if (ownerPlayer && this.scriptEngine) {
+      dynamicPowerBonus = this.scriptEngine.getDynamicPower(card, slot, ownerPlayer)
+    }
     
-    return basePower + donBonus + leaderBonus + manualBonus
+    return basePower + donBonus + leaderBonus + manualBonus + dynamicPowerBonus
   }
 
   _hasKeyword(card, keyword) {
@@ -1976,6 +2471,23 @@ export class GameEngine {
       return effectText.includes('速攻')
     }
     return false
+  }
+
+  /**
+   * 检查卡牌是否有动态关键词（通过脚本条件获得）
+   * 例如 OP02-008: [Don!! x1] 生命<=2 且领袖是白胡子海盗团时获得速攻
+   */
+  _hasDynamicKeyword(card, slot, player, keyword) {
+    return this.scriptEngine.hasDynamicKeyword(card, slot, player, keyword)
+  }
+
+  /**
+   * 检查卡牌是否有 TRIGGER 脚本
+   * @param {string} cardNumber - 卡号
+   * @returns {boolean}
+   */
+  _hasTriggerScript(cardNumber) {
+    return this.scriptEngine.hasScript(cardNumber, TRIGGER_TYPES.TRIGGER)
   }
 
   _drawCard(player) {

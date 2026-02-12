@@ -34,6 +34,7 @@ export interface CardSlot {
   state: CardState
   power: number // Current calculated power
   canAttackThisTurn?: boolean
+  hasActivateMain?: boolean
 }
 
 export interface Player {

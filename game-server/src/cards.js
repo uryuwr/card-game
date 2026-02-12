@@ -133,6 +133,10 @@ export async function fetchDeckFromAPI(deckId) {
       life: data.leader.life,
       effect: data.leader.effect,
       trigger: data.leader.trigger,
+      trait: data.leader.trait,
+      traitCn: data.leader.trait_cn,
+      attribute: data.leader.attribute,
+      attributeCn: data.leader.attribute_cn,
       effectScript: data.leader.effect_script,
       imageUrl: data.leader.image_url,
     } : null
@@ -261,6 +265,87 @@ function buildDefaultDeck(cardPool, lifeCount) {
 
   const life = deck.splice(0, lifeCount)
   return { deck, life }
+}
+
+/**
+ * 获取用于测试的 Mock 卡组
+ * 包含所有实现了脚本的卡牌，便于快速测试效果
+ * @param {number} playerIndex - 玩家索引 (0=先手, 1=后手)
+ * @returns {{ leader: object, deck: object[], name: string }}
+ */
+export function getTestDeck(playerIndex = 0) {
+  // 白胡子领袖
+  const leader = {
+    cardNumber: 'OP02-001',
+    name: 'Edward Newgate',
+    nameCn: '爱德华·纽哥特',
+    cardType: CARD_TYPES.LEADER,
+    color: '红',
+    power: 6000,
+    life: 5,
+    attribute: '打击',
+    attributeCn: '打击',
+    effect: '【己方回合结束时】将己方生命区最上方1张卡牌加入手牌。',
+    trait: 'Whitebeard Pirates',
+    traitCn: '白胡子海盗团',
+    imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795774OP02-001.jpg',
+  }
+
+  // 测试专用卡牌池 - 包含所有实现了脚本的角色/事件
+  const testCards = [
+    // === 白胡子海盗团角色 ===
+    { cardNumber: 'OP03-015', nameCn: '莉姆', cost: 4, power: 2000, counter: 2000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1682589336126OP03-015.png' },
+    { cardNumber: 'OP03-013', nameCn: '马尔高', cost: 6, power: 6000, counter: null, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1682589336125OP03-013.png' },
+    { cardNumber: 'OP02-008', nameCn: '乔兹', cost: 4, power: 4000, counter: 2000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795789OP02-008.jpg' },
+    { cardNumber: 'OP02-004', nameCn: '爱德华·纽哥特', cost: 10, power: 12000, counter: null, color: '红', trait: '白胡子海盗团/四皇', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795772OP02-004.jpg' },
+    { cardNumber: 'OP02-013', nameCn: '波特卡斯·D·艾斯', cost: 7, power: 7000, counter: null, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795775OP02-013.jpg' },
+    { cardNumber: 'OP02-015', nameCn: '卷乃', cost: 1, power: 2000, counter: 1000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1726626190431OP02-015_05.png' },
+    { cardNumber: 'OP03-003', nameCn: '伊佐', cost: 2, power: 4000, counter: 1000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1726626190447OP03-003_05.png' },
+    { cardNumber: 'OP03-006', nameCn: '斯比德·基尔', cost: 3, power: 4000, counter: 1000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1682589336123OP03-006.png' },
+    
+    // === 草帽一伙角色 ===
+    { cardNumber: 'OP01-016', nameCn: '奈美', cost: 1, power: 1000, counter: 1000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1733812854990OP01-016_07.png' },
+    { cardNumber: 'OP01-013', nameCn: '山智', cost: 4, power: 5000, counter: 1000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1720666299237OP01-013_04.png' },
+    { cardNumber: 'ST01-012', nameCn: '蒙奇·D·路飞', cost: 5, power: 6000, counter: null, color: '红', trait: '草帽一伙/超新星', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795663ST01-012_01.png' },
+    { cardNumber: 'ST01-011', nameCn: '布鲁克', cost: 2, power: 3000, counter: 2000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795662ST01-011.png' },
+    { cardNumber: 'OP01-015', nameCn: '托尼托尼·乔巴', cost: 2, power: 3000, counter: 1000, color: '红', trait: '草帽一伙/动物', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795613OP01-015.jpg' },
+
+    // === 事件卡 ===
+    { cardNumber: 'OP01-029', nameCn: '离子光～～～波！！！', cost: 0, power: null, counter: 2000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.EVENT, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1726626190412OP01-029_05.png' },
+    { cardNumber: 'OP01-026', nameCn: '橡皮橡皮火拳枪', cost: 2, power: null, counter: 4000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.EVENT, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1669722042396OP01-026.png', effect: '[反击] 己方1张领袖或角色力量+4000，然后KO对手最多1张力量4000以下的角色卡。' },
+    { cardNumber: 'ST01-014', nameCn: '毛皮强化', cost: 0, power: null, counter: 3000, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.EVENT, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795664ST01-014.png' },
+    { cardNumber: 'ST01-016', nameCn: '恶魔风脚', cost: 1, power: null, counter: null, color: '红', trait: '草帽一伙', cardType: CARD_TYPES.EVENT, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1675997795665ST01-016.png' },
+  ]
+
+  // 构建50张主卡组
+  const deck = []
+  // 每张关键卡放4张
+  const keyCards = ['OP03-015', 'OP02-008', 'OP01-016', 'OP01-029', 'OP02-015', 'OP03-003']
+  for (const cn of keyCards) {
+    const card = testCards.find(c => c.cardNumber === cn)
+    if (card) {
+      for (let i = 0; i < 4; i++) deck.push({ ...card })
+    }
+  }
+  // 每张非关键卡放2张
+  for (const card of testCards) {
+    if (!keyCards.includes(card.cardNumber)) {
+      for (let i = 0; i < 2; i++) deck.push({ ...card })
+    }
+  }
+  // 如果不够50张，用低费用角色填充
+  const filler = { cardNumber: 'OP02-015', nameCn: '卷乃', cost: 1, power: 2000, counter: 1000, color: '红', trait: '白胡子海盗团', cardType: CARD_TYPES.CHARACTER, imageUrl: 'https://source.windoent.com/OnePiecePc/Picture/1726626190431OP02-015_05.png' }
+  while (deck.length < 50) {
+    deck.push({ ...filler })
+  }
+
+  return {
+    deckId: `test-deck-${playerIndex}`,
+    name: `测试卡组${playerIndex + 1} (白胡子)`,
+    leader,
+    deck: deck.slice(0, 50),
+    totalCards: 50,
+  }
 }
 
 /**

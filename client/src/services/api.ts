@@ -133,6 +133,7 @@ class ApiService {
     search?: string
     limit?: number
     offset?: number
+    page?: number
   }): Promise<{ cards: Card[]; total: number }> {
     const params = new URLSearchParams()
     if (filters) {

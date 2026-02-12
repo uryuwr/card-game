@@ -13,6 +13,7 @@ export const TRIGGER_TYPES = {
   ACTIVATE_MAIN: 'ACTIVATE_MAIN',
   CONSTANT: 'CONSTANT',
   COUNTER: 'COUNTER',  // 反击阶段使用事件卡
+  TRIGGER: 'TRIGGER',  // 生命牌翻开时的触发效果（领袖受到伤害后翻开生命牌时可选择发动）
 }
 
 export class TriggerSystem {

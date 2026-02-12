@@ -100,6 +100,11 @@ export class ScriptEngine {
    * @returns {Array<{cardNumber, executed, result}>}
    */
   executeTrigger(triggerType, triggerInfo) {
+    // TRIGGER 类型特殊处理：生命牌不注册到 TriggerSystem，直接从 CARD_SCRIPTS 获取
+    if (triggerType === TRIGGER_TYPES.TRIGGER) {
+      return this._executeTriggerEffect(triggerInfo)
+    }
+
     const scripts = this.triggerSystem.getScripts(triggerType)
     console.log(`[ScriptEngine] executeTrigger(${triggerType}): ${scripts.length} scripts found, source: ${triggerInfo.sourceCard?.cardNumber}`)
     if (scripts.length === 0) return []
@@ -147,6 +152,65 @@ export class ScriptEngine {
     return results
   }
 
+  /**
+   * 执行生命牌的 TRIGGER 效果
+   * 生命牌不注册到 TriggerSystem，需要直接从 CARD_SCRIPTS 获取脚本
+   * @param {object} triggerInfo - { sourceCard, player, opponent }
+   * @returns {Array}
+   */
+  _executeTriggerEffect(triggerInfo) {
+    const card = triggerInfo.sourceCard
+    if (!card?.cardNumber) {
+      console.log('[ScriptEngine] _executeTriggerEffect: No card number')
+      return []
+    }
+
+    const scriptDef = CARD_SCRIPTS[card.cardNumber]
+    if (!scriptDef) {
+      console.log(`[ScriptEngine] _executeTriggerEffect: No script for ${card.cardNumber}`)
+      return []
+    }
+
+    // 找到 TRIGGER 类型的脚本
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+    const triggerScript = triggers.find(t => t.triggerType === TRIGGER_TYPES.TRIGGER)
+    
+    if (!triggerScript) {
+      console.log(`[ScriptEngine] _executeTriggerEffect: No TRIGGER script for ${card.cardNumber}`)
+      return []
+    }
+
+    console.log(`[ScriptEngine] _executeTriggerEffect: Executing TRIGGER for ${card.cardNumber}`)
+
+    const context = new ScriptContext(this.engine, {
+      triggerType: TRIGGER_TYPES.TRIGGER,
+      sourceCard: card,
+      sourceSlot: null,  // 生命牌没有 slot
+      player: triggerInfo.player,
+      opponent: triggerInfo.opponent,
+    })
+
+    const actions = new ActionDSL(context)
+    const results = []
+
+    try {
+      // 检查条件
+      if (!this._checkConditions(triggerScript, context, triggerInfo)) {
+        results.push({ cardNumber: card.cardNumber, executed: false, reason: 'conditions_not_met' })
+        return results
+      }
+
+      // 执行动作
+      const result = this._executeActions(triggerScript, context, actions, triggerInfo)
+      results.push({ cardNumber: card.cardNumber, executed: true, result })
+    } catch (error) {
+      console.error(`[ScriptEngine] Error executing TRIGGER ${card.cardNumber}:`, error)
+      results.push({ cardNumber: card.cardNumber, executed: false, reason: 'error', error: error.message })
+    }
+
+    return results
+  }
+
   // =====================
   // 内部方法
   // =====================
@@ -179,9 +243,50 @@ export class ScriptEngine {
   }
 
   /**
+   * 检查卡牌对象是否有指定触发类型的脚本
+   * @param {object} card - 卡牌对象
+   * @param {string} triggerType - 触发类型
+   * @returns {boolean}
+   */
+  hasScriptTrigger(card, triggerType) {
+    if (!card?.cardNumber) return false
+    return this.hasScript(card.cardNumber, triggerType)
+  }
+
+  /**
+   * 检查卡牌本回合是否可以发动 ACTIVATE_MAIN 效果
+   * 考虑一回合一次的限制
+   * @param {object} card - 卡牌对象
+   * @param {object} player - 玩家对象
+   * @returns {boolean}
+   */
+  canActivateMain(card, player) {
+    if (!card?.cardNumber) return false
+    const scriptDef = CARD_SCRIPTS[card.cardNumber]
+    if (!scriptDef) return false
+
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+    const activateMainScript = triggers.find(t => t.triggerType === 'ACTIVATE_MAIN')
+    if (!activateMainScript) return false
+
+    // 检查是否有一回合一次的限制
+    const conditions = activateMainScript.conditions || []
+    for (const cond of conditions) {
+      if (cond.type === 'CHECK_ONCE_PER_TURN') {
+        // 检查本回合是否已使用
+        const used = player.usedOncePerTurn?.[cond.key]
+        if (used) return false
+      }
+    }
+
+    return true
+  }
+
+  /**
    * 判断是否应该执行此脚本
    */
   _shouldExecute(triggerType, entry, triggerInfo) {
+    console.log(`[ScriptEngine] _shouldExecute: type=${triggerType}, entryCard=${entry.cardNumber}, entryInstance=${entry.instanceId}, sourceInstance=${triggerInfo.sourceCard?.instanceId}`)
     switch (triggerType) {
       case TRIGGER_TYPES.ON_PLAY:
         // ON_PLAY 只执行刚登场的那张卡的脚本
@@ -210,6 +315,12 @@ export class ScriptEngine {
       case TRIGGER_TYPES.COUNTER:
         // COUNTER 只执行使用的Counter卡的脚本
         return entry.instanceId === triggerInfo.sourceCard?.instanceId
+
+      case TRIGGER_TYPES.TRIGGER:
+        // TRIGGER 执行生命牌翻开时的触发效果（生命区被翻开的卡）
+        // 注意: 执行前不需要注册，因为生命牌不在场上
+        // 这里检查卡号是否匹配（因为生命牌没有注册过）
+        return entry.cardNumber === triggerInfo.sourceCard?.cardNumber
 
       default:
         return false
@@ -245,6 +356,15 @@ export class ScriptEngine {
         return don >= required
       }
 
+      case 'CHECK_RESTED_DON': {
+        // 检查玩家的休息DON数量是否 >= minAmount
+        const player = context.getCurrentPlayer()
+        const restedDon = player.donRested || 0
+        const required = condition.minAmount || 1
+        console.log(`[ScriptEngine] CHECK_RESTED_DON: player has ${restedDon} rested DON, need ${required}`)
+        return restedDon >= required
+      }
+
       case 'CHECK_LIFE': {
         // 检查玩家生命值
         const life = context.getLifeCount()
@@ -266,13 +386,51 @@ export class ScriptEngine {
       }
 
       case 'IS_OPPONENT_TURN': {
-        return !context.isMyTurn()
+        const isOpponent = !context.isMyTurn()
+        console.log(`[ScriptEngine] IS_OPPONENT_TURN check: isMyTurn=${context.isMyTurn()}, result=${isOpponent}`)
+        return isOpponent
       }
 
       case 'CHECK_LEADER': {
         // 检查领袖是否是特定卡号
         const leader = context.getLeader()
         return leader.card.cardNumber === condition.cardNumber
+      }
+
+      case 'CHECK_LEADER_TRAIT': {
+        // 检查领袖是否具有特定特征
+        const leader = context.getLeader()
+        console.log(`[ScriptEngine] CHECK_LEADER_TRAIT debug: leader=`, JSON.stringify(leader?.card?.cardNumber), 'traitCn=', leader?.card?.traitCn, 'trait=', leader?.card?.trait)
+        // 优先使用中文特征，特征可能有多个用/分隔
+        const traits = (leader.card.traitCn || leader.card.trait || '').split('/')
+        const result = traits.some(t => t.trim() === condition.trait)
+        console.log(`[ScriptEngine] CHECK_LEADER_TRAIT: leader traits='${leader.card.traitCn || leader.card.trait}', need='${condition.trait}', result=${result}`)
+        return result
+      }
+
+      case 'CHECK_OPPONENT_LIFE': {
+        // 检查对手生命值
+        const life = context.getOpponent().life.length
+        if (condition.operator === '<=') return life <= condition.amount
+        if (condition.operator === '>=') return life >= condition.amount
+        if (condition.operator === '<') return life < condition.amount
+        if (condition.operator === '>') return life > condition.amount
+        return life === condition.amount
+      }
+
+      case 'SELF_ACTIVE': {
+        // 检查自身是否处于活跃状态
+        const slot = context.getSourceSlot()
+        // 角色缺省就是活跃，只有休息状态才不行
+        return slot?.state !== 'RESTED'
+      }
+
+      case 'CHECK_ONCE_PER_TURN': {
+        // 检查是否已使用过此回合一次的效果
+        const key = condition.key
+        const player = context.getCurrentPlayer()
+        const used = player.usedOncePerTurn?.[key]
+        return !used  // 未使用返回true，已使用返回false
       }
 
       default:
@@ -316,7 +474,36 @@ export class ScriptEngine {
         const targetPlayerId = action.targetPlayer === 'opponent'
           ? context.getOpponent().id
           : context.getCurrentPlayer().id
-        return actions.modifyPower(targetId, action.amount, targetPlayerId)
+        
+        // 支持多目标 (ALL_SELECTED)
+        if (Array.isArray(targetId)) {
+          for (const tid of targetId) {
+            actions.modifyPower(tid, action.amount, targetPlayerId)
+            // 注册带过期的效果
+            if (action.expiry) {
+              this.engine.registerEffect({
+                type: 'POWER_MOD',
+                targetId: tid,
+                amount: action.amount,
+                expiry: action.expiry,
+                sourceName: context.sourceCard?.nameCn || context.sourceCard?.name,
+              })
+            }
+          }
+          return true
+        }
+        const result = actions.modifyPower(targetId, action.amount, targetPlayerId)
+        // 注册带过期的效果
+        if (action.expiry && targetId) {
+          this.engine.registerEffect({
+            type: 'POWER_MOD',
+            targetId: targetId,
+            amount: action.amount,
+            expiry: action.expiry,
+            sourceName: context.sourceCard?.nameCn || context.sourceCard?.name,
+          })
+        }
+        return result
       }
 
       case 'ADD_ATTACK_STATE': {
@@ -357,18 +544,37 @@ export class ScriptEngine {
       }
 
       case 'PENDING_ATTACH_DON': {
+        // 收集可贴DON的目标（己方领袖和角色）
+        const attachTargets = this._collectValidTargets({
+          targetScope: action.targetScope || 'player',
+          targetTypes: action.targetTypes || ['leader', 'character'],
+        }, context)
+
+        // 检查可用的休息DON数量
+        const player = context.getCurrentPlayer()
+        const availableRestedDon = player.donRested || 0
+        const donToAttach = Math.min(action.donCount || action.count || 1, availableRestedDon)
+        
+        if (donToAttach === 0) {
+          context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: 没有可用的休息DON`)
+          return { needsInteraction: false }
+        }
+
         // 设置待决效果，等待玩家选择目标
         this.engine.pendingEffect = {
           type: 'ATTACH_DON',
-          count: action.count || 1,
-          remaining: action.count || 1,
+          validTargets: attachTargets,
+          donCount: donToAttach,  // 要贴的DON数量
+          maxSelect: action.maxSelect || 1,  // 可选择的目标数量
           donState: action.donState || 'rested',
+          message: action.message || `选择目标贴附 ${donToAttach} 个 DON!!`,
           playerId: context.getCurrentPlayer().id,
           sourceCardNumber: context.sourceCard.cardNumber,
           sourceCardName: context.sourceCard.nameCn || context.sourceCard.name,
         }
-        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: 选择最多 ${action.count} 个目标各贴 1 DON!!`)
-        return true
+        console.log(`[ScriptEngine] PENDING_ATTACH_DON set:`, this.engine.pendingEffect)
+        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: ${this.engine.pendingEffect.message}`)
+        return { needsInteraction: true, type: 'ATTACH_DON' }
       }
 
       case 'PENDING_SEARCH': {
@@ -415,6 +621,141 @@ export class ScriptEngine {
         return { needsInteraction: true, type: 'SELECT_TARGET' }
       }
 
+      case 'PENDING_KO_TARGET': {
+        // 等待玩家选择要 KO 的目标 (需满足 filter 条件)
+        const validTargets = this._collectValidTargets(action, context)
+          .filter(t => {
+            if (!action.filter) return true
+            // 检查 maxPower
+            if (action.filter.maxPower !== undefined) {
+              const power = this._calculateTargetPower(t)
+              if (power > action.filter.maxPower) return false
+            }
+            // 检查 maxCost
+            if (action.filter.maxCost !== undefined) {
+              const cost = parseInt(t.card?.cost ?? t.card?.costCn ?? 999, 10)
+              if (cost > action.filter.maxCost) return false
+            }
+            // 检查 hasKeyword (如阻挡者)
+            if (action.filter.hasKeyword) {
+              const keywords = t.card?.keywords || t.card?.keywordsCn || ''
+              const hasKw = keywords.includes(action.filter.hasKeyword) || 
+                            keywords.includes('Blocker') || 
+                            keywords.includes('阻挡者')
+              if (!hasKw) return false
+            }
+            return true
+          })
+
+        if (validTargets.length === 0) {
+          context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: 场上没有符合条件的目标`)
+          return { needsInteraction: false }
+        }
+
+        this.engine.pendingEffect = {
+          type: 'KO_TARGET',
+          validTargets,
+          maxSelect: action.maxSelect || 1,
+          message: action.message,
+          optional: action.optional ?? false,
+          filter: action.filter || {},
+          playerId: context.getCurrentPlayer().id,
+          sourceCardNumber: context.sourceCard.cardNumber,
+          sourceCardName: context.sourceCard.nameCn || context.sourceCard.name,
+        }
+
+        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'KO_TARGET' }
+      }
+
+      case 'GRANT_KEYWORD': {
+        // 给目标赋予关键词（速攻/阻挡者等）
+        const targetId = this._resolveTarget(action.target, context, triggerInfo)
+        const player = context.getCurrentPlayer()
+        
+        // 找到目标 slot
+        let slot = null
+        if (targetId === 'leader' || player.leader.card.instanceId === targetId) {
+          slot = player.leader
+        } else {
+          slot = context.findCharacterSlot(targetId, player)
+        }
+
+        if (slot) {
+          slot.tempKeywords = slot.tempKeywords || []
+          if (!slot.tempKeywords.includes(action.keyword)) {
+            slot.tempKeywords.push(action.keyword)
+          }
+          context.log(`获得【${action.keyword}】`)
+        }
+        return true
+      }
+
+      case 'REST_SELF': {
+        // 将自身转为休息状态
+        const slot = context.getSourceSlot()
+        if (slot) {
+          slot.state = 'RESTED'
+          context.log(`${context.sourceCard.nameCn || context.sourceCard.name} 转为休息状态`)
+        }
+        return true
+      }
+
+      case 'PENDING_DISCARD_EVENT': {
+        // 丢弃事件效果（需玩家从手牌中弃1张事件）
+        const player = context.getCurrentPlayer()
+        const events = player.hand.filter(c => c.cardType === 'EVENT')
+        
+        if (events.length === 0) {
+          context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: 手牌中没有事件卡`)
+          return { needsInteraction: false }
+        }
+
+        this.engine.pendingEffect = {
+          type: 'DISCARD_EVENT',
+          validCards: events.map(c => this.engine._sanitizeCard(c)),
+          count: action.count || 1,
+          message: action.message,
+          optional: action.optional ?? true,
+          onDiscardActions: action.onDiscard || [],
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard?.cardNumber,
+          sourceCardName: context.sourceCard?.nameCn || context.sourceCard?.name,
+        }
+
+        context.log(`${context.sourceCard.nameCn || context.sourceCard.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'DISCARD_EVENT' }
+      }
+
+      case 'REVIVE_SELF': {
+        // 从墓地复活自身（马尔高等卡使用）
+        const player = context.getCurrentPlayer()
+        const cardNumber = context.sourceCard?.cardNumber
+        
+        // 在墓地中找到自己
+        const idx = player.trash.findIndex(c => c.cardNumber === cardNumber)
+        if (idx === -1) {
+          context.log(`复活失败: 墓地中找不到 ${cardNumber}`)
+          return false
+        }
+
+        const [card] = player.trash.splice(idx, 1)
+        
+        // 登场到场上（休息状态）
+        const newSlot = {
+          card,
+          attachedDon: 0,
+          state: action.state === 'RESTED' ? 'RESTED' : 'ACTIVE',
+        }
+        player.characters.push(newSlot)
+        
+        // 重新注册脚本
+        this.registerCard(card, card.instanceId, player.id)
+
+        context.log(`${card.nameCn || card.name} 从墓地复活!`)
+        return true
+      }
+
       case 'CONDITIONAL_ACTION': {
         // 条件满足时执行子动作
         if (this._evaluateCondition(action.condition, context, triggerInfo)) {
@@ -431,10 +772,357 @@ export class ScriptEngine {
         return true
       }
 
+      case 'SET_ONCE_PER_TURN': {
+        // 设置每回合一次标记
+        const key = action.key
+        const player = context.getCurrentPlayer()
+        player.usedOncePerTurn = player.usedOncePerTurn || {}
+        player.usedOncePerTurn[key] = true
+        return true
+      }
+
+      case 'PENDING_PLAY_FROM_HAND': {
+        // 从手牌中选择一张角色登场
+        const player = context.getCurrentPlayer()
+        const validCards = player.hand.filter(c => {
+          if (action.filter?.cardType === 'CHARACTER' && c.cardType !== 'CHARACTER') {
+            return false
+          }
+          if (action.filter?.maxPower !== undefined) {
+            const power = c.power || 0
+            if (power > action.filter.maxPower) return false
+          }
+          if (action.filter?.trait) {
+            const traits = (c.traitCn || c.trait || '').split('/')
+            if (!traits.some(t => t.trim() === action.filter.trait)) return false
+          }
+          return true
+        })
+
+        if (validCards.length === 0) {
+          context.log(`手牌中没有符合条件的角色`)
+          return { needsInteraction: false }
+        }
+
+        this.engine.pendingEffect = {
+          type: 'PLAY_FROM_HAND',
+          validCards: validCards.map(c => this.engine._sanitizeCard(c)),
+          maxSelect: action.maxSelect || 1,
+          optional: action.optional ?? false,
+          filter: action.filter || {},
+          message: action.message,
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard?.cardNumber,
+          sourceCardName: context.sourceCard?.nameCn || context.sourceCard?.name,
+        }
+
+        context.log(`${context.sourceCard?.nameCn || context.sourceCard?.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'PLAY_FROM_HAND' }
+      }
+
+      case 'PENDING_SEARCH_PLAY': {
+        // 检索后直接登场角色
+        const player = context.getCurrentPlayer()
+        const viewCount = action.viewCount || 5
+        const actual = Math.min(viewCount, player.deck.length)
+        
+        if (actual === 0) {
+          context.log(`牌库为空`)
+          return { needsInteraction: false }
+        }
+
+        const topCards = player.deck.slice(-actual).reverse()
+        
+        // 过滤符合条件的卡
+        const validCards = topCards.filter(c => {
+          if (action.filter?.cardType === 'CHARACTER' && c.cardType !== 'CHARACTER') {
+            return false
+          }
+          if (action.filter?.maxPower !== undefined) {
+            const power = c.power || 0
+            if (power > action.filter.maxPower) return false
+          }
+          if (action.filter?.maxCost !== undefined) {
+            const cost = c.cost || 0
+            if (cost > action.filter.maxCost) return false
+          }
+          if (action.filter?.trait) {
+            const traits = (c.traitCn || c.trait || '').split('/')
+            if (!traits.some(t => t.trim() === action.filter.trait)) return false
+          }
+          return true
+        })
+
+        this.engine.pendingEffect = {
+          type: 'SEARCH_PLAY',
+          allCards: topCards.map(c => this.engine._sanitizeCard(c)),
+          validCards: validCards.map(c => this.engine._sanitizeCard(c)),
+          viewedCount: actual,
+          maxSelect: action.maxSelect || 1,
+          optional: action.optional ?? true,
+          filter: action.filter || {},
+          playState: action.playState || 'ACTIVE',
+          message: action.message,
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard?.cardNumber,
+          sourceCardName: context.sourceCard?.nameCn || context.sourceCard?.name,
+        }
+
+        context.log(`${context.sourceCard?.nameCn || context.sourceCard?.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'SEARCH_PLAY' }
+      }
+
+      case 'ADD_FIELD_STATE': {
+        // 给场上单位添加状态 (如 cannotBeBlocked)
+        const targetId = this._resolveTarget(action.target, context, triggerInfo)
+        const player = context.getCurrentPlayer()
+        
+        // 找到目标 slot
+        let slot = null
+        if (targetId === 'leader' || player.leader.card.instanceId === targetId) {
+          slot = player.leader
+        } else {
+          slot = context.findCharacterSlot(targetId, player) || 
+                 context.findCharacterSlot(targetId, context.getOpponent())
+        }
+
+        if (slot) {
+          slot.fieldStates = slot.fieldStates || {}
+          slot.fieldStates[action.state] = action.value ?? true
+          if (action.expiry === 'END_OF_TURN') {
+            slot.fieldStates[`${action.state}_expiry`] = 'END_OF_TURN'
+          }
+          context.log(`添加状态: ${action.state}`)
+        }
+        return true
+      }
+
+      case 'PENDING_DISCARD': {
+        // 丢弃手牌效果
+        const player = context.getCurrentPlayer()
+        
+        if (player.hand.length === 0) {
+          context.log(`手牌为空，无法丢弃`)
+          return { needsInteraction: false }
+        }
+
+        this.engine.pendingEffect = {
+          type: 'DISCARD',
+          validCards: player.hand.map(c => this.engine._sanitizeCard(c)),
+          count: action.count || 1,
+          optional: action.optional ?? false,
+          message: action.message,
+          onDiscardActions: action.onDiscard || [],
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard?.cardNumber,
+          sourceCardName: context.sourceCard?.nameCn || context.sourceCard?.name,
+        }
+
+        context.log(`${context.sourceCard?.nameCn || context.sourceCard?.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'DISCARD' }
+      }
+
+      case 'PENDING_RECOVER_FROM_TRASH': {
+        // 从废弃区回收卡牌到手牌
+        const player = context.getCurrentPlayer()
+        const filter = action.filter || {}
+
+        // 过滤废弃区中符合条件的卡
+        const validCards = player.trash.filter(c => {
+          if (filter.cardType && c.cardType !== filter.cardType) {
+            return false
+          }
+          if (filter.maxCost !== undefined) {
+            const cost = parseInt(c.cost || 0, 10)
+            if (cost > filter.maxCost) return false
+          }
+          if (filter.trait) {
+            const traits = (c.traitCn || c.trait || '').split('/')
+            if (!traits.some(t => t.trim() === filter.trait)) return false
+          }
+          if (filter.excludeCardNumber && c.cardNumber === filter.excludeCardNumber) {
+            return false
+          }
+          return true
+        })
+
+        if (validCards.length === 0) {
+          context.log(`废弃区没有符合条件的卡牌`)
+          return { needsInteraction: false }
+        }
+
+        this.engine.pendingEffect = {
+          type: 'RECOVER_FROM_TRASH',
+          validCards: validCards.map(c => this.engine._sanitizeCard(c)),
+          maxSelect: action.maxSelect || 1,
+          optional: action.optional ?? false,
+          message: action.message,
+          filter: filter,
+          playerId: player.id,
+          sourceCardNumber: context.sourceCard?.cardNumber,
+          sourceCardName: context.sourceCard?.nameCn || context.sourceCard?.name,
+        }
+
+        context.log(`${context.sourceCard?.nameCn || context.sourceCard?.name}: ${action.message}`)
+        return { needsInteraction: true, type: 'RECOVER_FROM_TRASH' }
+      }
+
       default:
         console.warn(`[ScriptEngine] Unknown action type: ${action.type}`)
         return null
     }
+  }
+
+  /**
+   * 计算目标的实际力量
+   * @param {object} target - { instanceId, playerId, card }
+   */
+  _calculateTargetPower(target) {
+    const player = this.engine.players.find(p => p.id === target.playerId)
+    if (!player) return 0
+
+    let card = target.card
+    let slot = null
+
+    if (target.type === 'leader') {
+      slot = player.leader
+      card = slot.card
+    } else {
+      slot = player.characters.find(c => c.card.instanceId === target.instanceId)
+      if (slot) card = slot.card
+    }
+
+    if (!card) return 0
+    return this.engine._calculatePower(card, slot, player)
+  }
+
+  /**
+   * 获取卡牌的动态力量加成（CONSTANT 类型的 dynamicPower）
+   * @param {object} card - 卡牌数据
+   * @param {object} slot - 卡牌 slot
+   * @param {object} ownerPlayer - 卡牌所属玩家
+   * @returns {number} 动态力量加成
+   */
+  getDynamicPower(card, slot, ownerPlayer) {
+    const scriptDef = this._getScriptDefinition(card)
+    if (!scriptDef) return 0
+
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+    let totalBonus = 0
+
+    for (const trigger of triggers) {
+      // 只处理 CONSTANT 类型的 dynamicPower
+      if (trigger.triggerType !== 'CONSTANT' || !trigger.dynamicPower) continue
+
+      const { amount, conditions } = trigger.dynamicPower
+      if (!amount || !conditions) continue
+
+      // 检查所有条件
+      const opponent = this.engine.players.find(p => p.id !== ownerPlayer.id)
+      const context = new ScriptContext(this.engine, {
+        triggerType: 'CONSTANT',
+        sourceCard: card,
+        sourceSlot: slot,
+        player: ownerPlayer,
+        opponent,
+      })
+
+      let allConditionsMet = true
+      for (const condition of conditions) {
+        const result = this._evaluateCondition(condition, context, {})
+        console.log(`[getDynamicPower] ${card.cardNumber} condition ${condition.type}: ${result}`)
+        if (!result) {
+          allConditionsMet = false
+          break
+        }
+      }
+
+      if (allConditionsMet) {
+        console.log(`[getDynamicPower] ${card.cardNumber} bonus: +${amount}`)
+        totalBonus += amount
+      }
+    }
+
+    return totalBonus
+  }
+
+  /**
+   * 检查卡牌是否有动态关键词（通过脚本条件获得）
+   * 例如 OP02-008: [Don!! x1] 生命<=2 且领袖是白胡子海盗团时获得【速攻】
+   * @param {object} card - 卡牌数据
+   * @param {object} slot - 卡槽信息（包含 attachedDon 等）
+   * @param {object} ownerPlayer - 卡牌所属玩家
+   * @param {string} keyword - 要检查的关键词
+   * @returns {boolean} 是否有该动态关键词
+   */
+  /**
+   * 检查卡牌是否有条件关键词的定义（不检查条件是否满足）
+   * 用于判断卡牌的关键词是条件获得还是固有的
+   */
+  hasConditionalKeyword(card, keyword) {
+    const scriptDef = this._getScriptDefinition(card)
+    if (!scriptDef) return false
+
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+    for (const trigger of triggers) {
+      if (trigger.triggerType !== 'CONSTANT' || !trigger.dynamicKeywords) continue
+      for (const dynKw of trigger.dynamicKeywords) {
+        if (dynKw.keyword?.toLowerCase() === keyword?.toLowerCase()) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  hasDynamicKeyword(card, slot, ownerPlayer, keyword) {
+    const scriptDef = this._getScriptDefinition(card)
+    if (!scriptDef) return false
+
+    const triggers = Array.isArray(scriptDef) ? scriptDef : [scriptDef]
+
+    for (const trigger of triggers) {
+      // 只处理 CONSTANT 类型的 dynamicKeywords
+      if (trigger.triggerType !== 'CONSTANT' || !trigger.dynamicKeywords) continue
+
+      for (const dynKw of trigger.dynamicKeywords) {
+        // 检查是否是要找的关键词
+        if (dynKw.keyword?.toLowerCase() !== keyword?.toLowerCase()) continue
+
+        const conditions = dynKw.conditions || []
+        if (conditions.length === 0) {
+          // 无条件获得该关键词
+          return true
+        }
+
+        // 检查所有条件
+        const opponent = this.engine.players.find(p => p.id !== ownerPlayer.id)
+        const context = new ScriptContext(this.engine, {
+          triggerType: 'CONSTANT',
+          sourceCard: card,
+          sourceSlot: slot,
+          player: ownerPlayer,
+          opponent,
+        })
+
+        let allConditionsMet = true
+        for (const condition of conditions) {
+          const result = this._evaluateCondition(condition, context, {})
+          console.log(`[hasDynamicKeyword] ${card.cardNumber} ${keyword} condition ${condition.type}: ${result}`)
+          if (!result) {
+            allConditionsMet = false
+            break
+          }
+        }
+
+        if (allConditionsMet) {
+          console.log(`[hasDynamicKeyword] ${card.cardNumber} has dynamic keyword: ${keyword}`)
+          return true
+        }
+      }
+    }
+
+    return false
   }
 
   /**
@@ -455,6 +1143,9 @@ export class ScriptEngine {
       case 'SELECTED':
         // 引用刚被选中的目标
         return context.selectedTargets?.[0]
+      case 'ALL_SELECTED':
+        // 引用所有被选中的目标
+        return context.selectedTargets
       case 'BATTLE_TARGET':
         // 战斗中被攻击的目标
         return this.engine.pendingAttack?.targetId
@@ -539,6 +1230,41 @@ export class ScriptEngine {
     const results = []
 
     for (const action of pendingEffect.onSelectActions) {
+      const result = this._executeAction(action, context, actions, {})
+      results.push(result)
+    }
+
+    return results
+  }
+
+  /**
+   * 执行丢弃手牌后的动作序列
+   * @param {object[]} onDiscardActions - 丢弃后要执行的动作
+   * @param {object} sourceInfo - 效果来源信息
+   * @param {object} player - 玩家
+   * @param {object} opponent - 对手
+   * @param {object[]} discardedCards - 被丢弃的卡牌
+   */
+  executeOnDiscardActions(onDiscardActions, sourceInfo, player, opponent, discardedCards) {
+    if (!onDiscardActions?.length) return []
+
+    const context = new ScriptContext(this.engine, {
+      triggerType: 'ON_ATTACK', // 通常是攻击时触发
+      sourceCard: { 
+        cardNumber: sourceInfo.sourceCardNumber, 
+        nameCn: sourceInfo.sourceCardName,
+        name: sourceInfo.sourceCardName,
+      },
+      sourceSlot: null,
+      player,
+      opponent,
+    })
+    context.discardedCards = discardedCards
+
+    const actions = new ActionDSL(context)
+    const results = []
+
+    for (const action of onDiscardActions) {
       const result = this._executeAction(action, context, actions, {})
       results.push(result)
     }
