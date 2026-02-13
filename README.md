@@ -555,7 +555,8 @@ sqlite3 card_game.db "SELECT * FROM cards LIMIT 5"
 
 ## 📝 TODO
 
-- [ ] 实现更多卡牌效果
+- [x] 实现更多卡牌效果
+- [x] 卡组编辑功能
 - [ ] AI 对战模式
 - [ ] 战斗日志/回放
 - [ ] 多语言支持

@@ -1,0 +1,294 @@
+/* ===== 移动端底部抽屉 ===== */
+
+/* 半透明遮罩层 */
+.card-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: flex;
+  align-items: flex-end;
+  animation: overlay-fade-in 0.2s ease-out;
+}
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 底部抽屉容器 */
+.card-preview-drawer {
+  width: 100%;
+  max-height: 65vh;
+  background: rgba(20, 20, 40, 0.98);
+  border-top: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 16px 16px 0 0;
+  overflow-y: auto;
+  animation: drawer-slide-up 0.25s ease-out;
+}
+
+@keyframes drawer-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* 顶部栏：拖拽指示条 + 关闭按钮 */
+.drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem 0.5rem;
+  background: rgba(20, 20, 40, 0.98);
+}
+
+.drawer-handle {
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+}
+
+.drawer-close-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.6rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e0e0e0;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.drawer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 抽屉中的添加按钮 */
+.drawer-add-btn {
+  position: absolute;
+  right: 3rem;
+  top: 0.6rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 193, 7, 0.8);
+  color: #000;
+  font-size: 1.2rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.drawer-add-btn:hover {
+  background: rgba(255, 193, 7, 1);
+}
+
+/* 移动端操作按钮 */
+.drawer-actions {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.drawer-action-btn {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.drawer-action-btn.add-btn {
+  background: rgba(40, 167, 69, 0.9);
+  color: #fff;
+}
+
+.drawer-action-btn.add-btn:hover {
+  background: rgba(40, 167, 69, 1);
+}
+
+.drawer-action-btn.remove-btn {
+  background: rgba(220, 53, 69, 0.9);
+  color: #fff;
+}
+
+.drawer-action-btn.remove-btn:hover {
+  background: rgba(220, 53, 69, 1);
+}
+
+.drawer-hint {
+  text-align: center;
+  color: #888;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+}
+
+/* PC端预览窗添加按钮 */
+
+/* 抽屉正文：横向布局（图片 + 信息） */
+.drawer-body {
+  display: flex;
+  gap: 1rem;
+  padding: 0 1rem 1.25rem;
+}
+
+.drawer-image {
+  flex-shrink: 0;
+  width: 140px;
+}
+
+.drawer-image img {
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.drawer-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 小屏竖屏时改为上下布局 */
+@media (max-width: 420px) {
+  .drawer-body {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .drawer-image {
+    width: 55%;
+  }
+}
+
+/* ===== PC端悬浮面板（保持原样，从DeckBuilder.css迁移） ===== */
+
+/* 共享样式（两端通用） */
+.preview-info {
+  font-size: 0.9rem;
+}
+
+.preview-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.preview-meta span {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.color-tag {
+  color: #fff;
+}
+
+.color-tag.color-red { background: rgba(220, 53, 69, 0.6); }
+.color-tag.color-green { background: rgba(40, 167, 69, 0.6); }
+.color-tag.color-blue { background: rgba(0, 123, 255, 0.6); }
+.color-tag.color-purple { background: rgba(155, 89, 182, 0.6); }
+.color-tag.color-black { background: rgba(50, 50, 50, 0.8); }
+.color-tag.color-yellow { background: rgba(255, 193, 7, 0.6); color: #000; }
+
+.preview-effect {
+  color: #ccc;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+  white-space: pre-wrap;
+}
+
+.preview-trigger {
+  color: #ff8c00;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 0.5rem;
+}
+
+/* PC端操作按钮 - 水平中轴线 */
+.popup-actions {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.popup-action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  font-size: 1.4rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  pointer-events: auto;
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.popup-action-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.popup-action-btn.add-btn {
+  background: rgba(40, 167, 69, 0.9);
+  color: #fff;
+}
+
+.popup-action-btn.add-btn:hover {
+  background: rgba(40, 167, 69, 1);
+}
+
+.popup-action-btn.remove-btn {
+  background: rgba(220, 53, 69, 0.9);
+  color: #fff;
+}
+
+.popup-action-btn.remove-btn:hover {
+  background: rgba(220, 53, 69, 1);
+}
+
+.popup-action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+}

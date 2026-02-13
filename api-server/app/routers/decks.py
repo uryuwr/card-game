@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 import uuid
 
@@ -129,6 +130,32 @@ async def create_deck(deck: DeckCreate, user_id: str = Query(default="system")):
         session.add(new_deck)
         await session.commit()
         return {"id": new_deck.id, "name": new_deck.name}
+
+
+class DeckUpdate(BaseModel):
+    name: str
+    leader_card_number: str
+    cards: list[DeckCard] = []
+
+
+@router.put("/{deck_id}")
+async def update_deck(deck_id: str, deck: DeckUpdate):
+    """更新卡组"""
+    async with async_session() as session:
+        query = select(Deck).where(Deck.id == deck_id)
+        result = await session.execute(query)
+        existing_deck = result.scalar_one_or_none()
+
+        if not existing_deck:
+            return {"error": "卡组不存在"}
+
+        existing_deck.name = deck.name
+        existing_deck.leader_card_number = deck.leader_card_number
+        existing_deck.cards = [{"card_number": c.card_number, "count": c.count} for c in deck.cards]
+        flag_modified(existing_deck, "cards")
+
+        await session.commit()
+        return {"id": existing_deck.id, "name": existing_deck.name}
 
 
 @router.delete("/{deck_id}")

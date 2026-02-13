@@ -142,6 +142,18 @@
   color: #e0e0e0;
 }
 
+/* 可编辑的牌组名称 */
+.deck-name-editable {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.deck-name-editable:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .deck-total {
   color: #888;
   font-size: 0.9rem;
@@ -205,6 +217,20 @@
 .card-thumb-mini:hover {
   transform: scale(1.1);
   z-index: 10;
+}
+
+/* 可点击的卡牌（用于调整数量） */
+.card-thumb-mini.clickable {
+  cursor: pointer;
+}
+
+.card-thumb-mini.clickable:hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255, 215, 0, 0.6);
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 .card-thumb-mini img {
@@ -394,7 +420,7 @@
   cursor: not-allowed;
 }
 
-/* Card Preview Popup */
+/* Card Preview Popup - PC端悬浮面板样式 */
 .card-preview-popup {
   position: fixed;
   right: 20px;
@@ -417,57 +443,7 @@
   margin-bottom: 1rem;
 }
 
-.preview-info {
-  font-size: 0.9rem;
-}
-
-.preview-name {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: #fff;
-}
-
-.preview-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.preview-meta span {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-}
-
-.color-tag {
-  color: #fff;
-}
-
-.color-tag.color-red { background: rgba(220, 53, 69, 0.6); }
-.color-tag.color-green { background: rgba(40, 167, 69, 0.6); }
-.color-tag.color-blue { background: rgba(0, 123, 255, 0.6); }
-.color-tag.color-purple { background: rgba(155, 89, 182, 0.6); }
-.color-tag.color-black { background: rgba(50, 50, 50, 0.8); }
-.color-tag.color-yellow { background: rgba(255, 193, 7, 0.6); color: #000; }
-
-.preview-effect {
-  color: #ccc;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  margin-bottom: 0.5rem;
-  white-space: pre-wrap;
-}
-
-.preview-trigger {
-  color: #ff8c00;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 0.5rem;
-}
+/* 预览内文字样式已迁移至 CardPreview.css */
 
 /* Utility */
 .loading {
@@ -502,6 +478,161 @@
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e0e0e0;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Edit mode styles */
+.deck-name-input {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.5);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.deck-name-input:focus {
+  outline: none;
+  border-color: #ffd700;
+}
+
+.edit-error {
+  background: rgba(220, 53, 69, 0.2);
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  color: #ff6b7a;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.leader-selected {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.leader-info {
+  flex: 1;
+}
+
+.btn-change-leader,
+.btn-select-leader {
+  background: rgba(100, 149, 237, 0.3);
+  border: 1px solid rgba(100, 149, 237, 0.5);
+  color: #87ceeb;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+}
+
+.btn-change-leader:hover,
+.btn-select-leader:hover {
+  background: rgba(100, 149, 237, 0.5);
+}
+
+.edit-cards-section {
+  margin-top: 1rem;
+}
+
+.edit-cards-section h4 {
+  font-size: 0.9rem;
+  color: #ffd700 0 0 0.5;
+  margin:rem;
+}
+
+.edit-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.edit-card-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.edit-card-item .card-thumb-mini {
+  width: 40px;
+}
+
+.edit-card-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.edit-card-name {
+  font-size: 0.85rem;
+  color: #ccc;
+}
+
+.edit-card-count {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.edit-card-count button {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(100, 149, 237, 0.4);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.edit-card-count button:hover {
+  background: rgba(100, 149, 237, 0.6);
+}
+
+.edit-card-count span {
+  min-width: 30px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.library-card.in-deck {
+  border: 2px solid rgba(255, 215, 0, 0.5);
+}
+
+.in-deck-badge {
+  background: rgba(255, 215, 0, 0.9);
+  color: #000;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.7rem;
 }
 
 /* Scrollbar */
@@ -539,13 +670,6 @@
   }
   
   .filter-search {
-    max-width: none;
-  }
-  
-  .card-preview-popup {
-    right: 10px;
-    left: 10px;
-    width: auto;
     max-width: none;
   }
   

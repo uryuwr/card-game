@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiService, type Deck } from '../services/api'
+import { apiService, type Deck, type DeckCard } from '../services/api'
+import { useCardPreview } from '../hooks/useCardPreview'
+import CardPreview from '../components/CardPreview'
 import './DeckBuilder.css'
 
 // 卡牌详情接口（从API返回）
@@ -60,7 +62,7 @@ const COSTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 export default function DeckBuilder() {
   const navigate = useNavigate()
-  
+
   // 牌组列表状态
   const [decks, setDecks] = useState<Deck[]>([])
   const [selectedDeckId, setSelectedDeckId] = useState<string | null>(null)
@@ -79,8 +81,31 @@ export default function DeckBuilder() {
   const [filterCost, setFilterCost] = useState<number | ''>('')
   const [filterSearch, setFilterSearch] = useState<string>('')
 
-  // 卡牌预览
-  const [previewCard, setPreviewCard] = useState<LibraryCard | DeckCardDetail | null>(null)
+  // 卡牌预览（使用统一 Hook）
+  const { previewCard, isTouchDevice, close: closePreview, getCardProps } = useCardPreview()
+
+  // 牌组卡牌编辑状态（直接编辑，无需编辑模式）
+  const [deckCards, setDeckCards] = useState<Map<string, number>>(new Map())
+  const [deckLeader, setDeckLeader] = useState<LibraryCard | null>(null)
+  const [localDeckName, setLocalDeckName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // 牌组名称编辑状态
+  const [isNameEditing, setIsNameEditing] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  // 当牌组详情加载完成后，初始化本地状态
+  useEffect(() => {
+    if (deckDetail) {
+      setLocalDeckName(deckDetail.name)
+      setDeckLeader(deckDetail.leader)
+      const cardsMap = new Map<string, number>()
+      deckDetail.cards.forEach(card => {
+        cardsMap.set(card.card_number, card.count)
+      })
+      setDeckCards(cardsMap)
+    }
+  }, [deckDetail])
 
   // 加载牌组列表
   useEffect(() => {
@@ -111,12 +136,122 @@ export default function DeckBuilder() {
 
   // 选择牌组
   const handleSelectDeck = (deckId: string) => {
+    setIsNameEditing(false)
+
     if (selectedDeckId === deckId) {
       setSelectedDeckId(null)
       setDeckDetail(null)
     } else {
       setSelectedDeckId(deckId)
       loadDeckDetail(deckId)
+    }
+  }
+
+  // 自动保存牌组
+  const saveDeck = useCallback(async (force = false, overrideCards?: Map<string, number>) => {
+    if (!selectedDeckId || (!force && saving)) return
+
+    // 验证
+    if (!localDeckName.trim()) {
+      console.warn('牌组名称不能为空')
+      return
+    }
+    if (!deckLeader) {
+      console.warn('请选择领袖卡')
+      return
+    }
+
+    const currentCards = overrideCards ?? deckCards
+    const cardsArray: DeckCard[] = []
+    currentCards.forEach((count, cardNumber) => {
+      if (count > 0) {
+        cardsArray.push({ card_number: cardNumber, count })
+      }
+    })
+
+    if (cardsArray.length === 0) {
+      console.warn('卡组至少需要一张卡牌')
+      return
+    }
+
+    if (!force) {
+      setSaving(true)
+    }
+
+    try {
+      await apiService.updateDeck(selectedDeckId, {
+        name: localDeckName,
+        leaderCard: deckLeader.card_number,
+        cards: cardsArray,
+      })
+      // 保存成功后重新加载列表以同步
+      await loadDecks()
+    } catch (err) {
+      console.error('保存失败:', err)
+    } finally {
+      if (!force) {
+        setSaving(false)
+      }
+    }
+  }, [selectedDeckId, localDeckName, deckLeader, deckCards, saving, loadDecks])
+
+  // 增加到牌组
+  const addCardToDeck = useCallback((cardNumber: string) => {
+    const current = deckCards.get(cardNumber) || 0
+    if (current < 4) {
+      const newCards = new Map(deckCards)
+      newCards.set(cardNumber, current + 1)
+      setDeckCards(newCards)
+      // 自动保存 - 直接传入新数据避免闭包陈旧状态
+      saveDeck(true, newCards)
+    }
+  }, [deckCards, saveDeck])
+
+  // 从牌组移除
+  const removeCardFromDeck = useCallback((cardNumber: string) => {
+    const current = deckCards.get(cardNumber) || 0
+    const newCards = new Map(deckCards)
+    if (current <= 1) {
+      newCards.delete(cardNumber)
+    } else {
+      newCards.set(cardNumber, current - 1)
+    }
+    setDeckCards(newCards)
+    // 自动保存 - 直接传入新数据避免闭包陈旧状态
+    saveDeck(true, newCards)
+  }, [deckCards, saveDeck])
+
+  // 设置领袖卡
+  const setDeckLeaderCard = useCallback((card: LibraryCard) => {
+    setDeckLeader(card)
+    // 自动保存
+    // 延迟一下确保状态更新完成
+    setTimeout(() => saveDeck(true), 0)
+  }, [saveDeck])
+
+  // 点击牌组名称开始编辑
+  const handleNameClick = () => {
+    setIsNameEditing(true)
+    setTimeout(() => {
+      nameInputRef.current?.select()
+    }, 0)
+  }
+
+  // 牌组名称编辑完成
+  const handleNameBlur = () => {
+    setIsNameEditing(false)
+    if (deckDetail && localDeckName !== deckDetail.name) {
+      saveDeck(true)
+    }
+  }
+
+  // 牌组名称按键处理
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleNameBlur()
+    } else if (e.key === 'Escape') {
+      setLocalDeckName(deckDetail?.name || '')
+      setIsNameEditing(false)
     }
   }
 
@@ -197,22 +332,6 @@ export default function DeckBuilder() {
     return card.image_url || `/cards/${card.card_number}.png`
   }
 
-  // 按类型分组牌组卡牌
-  const groupedDeckCards = useMemo(() => {
-    if (!deckDetail) return {}
-    const groups: Record<string, DeckCardDetail[]> = {
-      '角色': [],
-      '事件': [],
-      '舞台': [],
-    }
-    for (const card of deckDetail.cards) {
-      const type = card.card_type || '其他'
-      if (!groups[type]) groups[type] = []
-      groups[type].push(card)
-    }
-    return groups
-  }, [deckDetail])
-
   // 颜色样式
   const getColorClass = (color: string) => {
     const colorMap: Record<string, string> = {
@@ -227,7 +346,12 @@ export default function DeckBuilder() {
   }
 
   return (
-    <div className="deck-builder">
+    <div className="deck-builder" onClick={() => {
+      // PC端：点击空白处关闭预览
+      if (previewCard && !isTouchDevice) {
+        closePreview()
+      }
+    }}>
       <header className="deck-header">
         <button className="btn-back" onClick={() => navigate('/')}>
           ← 返回
@@ -249,20 +373,13 @@ export default function DeckBuilder() {
               <div
                 key={deck.id}
                 className={`deck-item ${selectedDeckId === deck.id ? 'selected' : ''}`}
-                onClick={() => handleSelectDeck(deck.id)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSelectDeck(deck.id)
+                }}
               >
                 <div className="deck-item-name">{deck.name}</div>
                 <div className="deck-item-count">{deck.total_cards} 张</div>
-                <button 
-                  className="btn-edit"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // TODO: 进入编辑模式
-                    alert('编辑功能开发中...')
-                  }}
-                >
-                  编辑
-                </button>
               </div>
             ))}
           </div>
@@ -272,65 +389,120 @@ export default function DeckBuilder() {
         {selectedDeckId && (
           <div className="deck-preview">
             {loadingDeck ? (
+              // 加载状态
               <div className="loading">加载中...</div>
             ) : deckDetail ? (
+              // 牌组详情展示（可直接编辑）
               <>
                 <div className="deck-preview-header">
-                  <h3>{deckDetail.name}</h3>
-                  <span className="deck-total">共 {deckDetail.total_cards} 张</span>
+                  {isNameEditing ? (
+                    <input
+                      ref={nameInputRef}
+                      type="text"
+                      className="deck-name-input"
+                      value={localDeckName}
+                      onChange={(e) => setLocalDeckName(e.target.value)}
+                      onBlur={handleNameBlur}
+                      onKeyDown={handleNameKeyDown}
+                      autoFocus
+                    />
+                  ) : (
+                    <h3 onClick={handleNameClick} className="deck-name-editable">
+                      {localDeckName}
+                    </h3>
+                  )}
+                  <span className="deck-total">共 {Array.from(deckCards.values()).reduce((a, b) => a + b, 0)} 张</span>
                 </div>
-                
-                {/* 领袖卡 */}
-                {deckDetail.leader && (
-                  <div className="deck-leader">
-                    <h4>领袖</h4>
-                    <div 
-                      className="card-thumb"
-                      onMouseEnter={() => setPreviewCard(deckDetail.leader)}
-                      onMouseLeave={() => setPreviewCard(null)}
-                    >
-                      <img 
-                        src={getCardImageUrl(deckDetail.leader)} 
-                        alt={deckDetail.leader.name_cn || deckDetail.leader.name}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `/cards/${deckDetail.leader!.card_number}.jpg`
-                        }}
-                      />
-                      <span className={`card-color-dot ${getColorClass(deckDetail.leader.color)}`} />
-                    </div>
-                    <div className="leader-name">{deckDetail.leader.name_cn || deckDetail.leader.name}</div>
-                  </div>
-                )}
 
-                {/* 卡牌分组展示 */}
-                <div className="deck-cards-groups">
-                  {Object.entries(groupedDeckCards).map(([type, cards]) => (
-                    cards.length > 0 && (
-                      <div key={type} className="deck-group">
-                        <h4>{type} ({cards.reduce((sum, c) => sum + c.count, 0)})</h4>
-                        <div className="deck-cards-grid">
-                          {cards.map(card => (
-                            <div 
-                              key={card.card_number}
-                              className="card-thumb-mini"
-                              onMouseEnter={() => setPreviewCard(card)}
-                              onMouseLeave={() => setPreviewCard(null)}
-                            >
-                              <img 
-                                src={getCardImageUrl(card)} 
-                                alt={card.name_cn || card.name}
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = `/cards/${card.card_number}.jpg`
-                                }}
-                              />
-                              <span className="card-count">×{card.count}</span>
-                              <span className={`card-color-dot ${getColorClass(card.color)}`} />
-                            </div>
-                          ))}
-                        </div>
+                {/* 领袖卡 */}
+                <div className="deck-leader">
+                  <h4>领袖</h4>
+                  {deckLeader ? (
+                    <div className="leader-selected">
+                      <div
+                        className="card-thumb"
+                        {...getCardProps(deckLeader)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          // 点击领袖卡跳转到卡牌库选择
+                          setFilterType('领袖')
+                        }}
+                      >
+                        <img
+                          src={getCardImageUrl(deckLeader)}
+                          alt={deckLeader.name_cn || deckLeader.name}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `/cards/${deckLeader!.card_number}.jpg`
+                          }}
+                        />
+                        <span className={`card-color-dot ${getColorClass(deckLeader.color)}`} />
                       </div>
-                    )
-                  ))}
+                      <div className="leader-info">
+                        <div className="leader-name">{deckLeader.name_cn || deckLeader.name}</div>
+                        <button className="btn-change-leader" onClick={(e) => {
+                          e.stopPropagation()
+                          setFilterType('领袖')
+                        }}>
+                          更换领袖
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button className="btn-select-leader" onClick={(e) => {
+                      e.stopPropagation()
+                      setFilterType('领袖')
+                    }}>
+                      选择领袖卡
+                    </button>
+                  )}
+                </div>
+
+                {/* 卡牌分组展示 - 使用本地编辑状态 */}
+                <div className="deck-cards-groups">
+                  {/* 按类型分组渲染 */}
+                  {(() => {
+                    const groups: Record<string, { card: DeckCardDetail | any; count: number }[]> = {
+                      '角色': [],
+                      '事件': [],
+                      '舞台': [],
+                    }
+                    deckCards.forEach((count, cardNumber) => {
+                      if (count <= 0) return
+                      const card = libraryCards.find(c => c.card_number === cardNumber) ||
+                        (deckDetail.cards.find(c => c.card_number === cardNumber) as any)
+                      if (!card) return
+                      const type = card.card_type || '其他'
+                      if (!groups[type]) groups[type] = []
+                      groups[type].push({ card, count })
+                    })
+
+                    return Object.entries(groups).map(([type, cards]) => (
+                      cards.length > 0 && (
+                        <div key={type} className="deck-group">
+                          <h4>{type} ({cards.reduce((sum, c) => sum + c.count, 0)})</h4>
+                          <div className="deck-cards-grid">
+                            {cards.map(({ card, count }) => (
+                              <div
+                                key={card.card_number}
+                                className="card-thumb-mini"
+                                {...getCardProps(card)}
+                              >
+                                <img
+                                  src={getCardImageUrl(card)}
+                                  alt={card.name_cn || card.name}
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = `/cards/${card.card_number}.jpg`
+                                  }}
+                                />
+                                <span className="card-count">×{count}</span>
+                                <span className={`card-color-dot ${getColorClass(card.color)}`} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    ))
+                  })()}
                 </div>
               </>
             ) : (
@@ -387,7 +559,10 @@ export default function DeckBuilder() {
             </select>
 
             {/* 重置按钮 */}
-            <button className="btn btn-reset" onClick={resetFilters}>
+            <button className="btn btn-reset" onClick={(e) => {
+              e.stopPropagation()
+              resetFilters()
+            }}>
               重置
             </button>
           </div>
@@ -402,32 +577,40 @@ export default function DeckBuilder() {
           ) : (
             <>
               <div className="library-cards-grid">
-                {libraryCards.map(card => (
-                  <div 
-                    key={card.card_number}
-                    className={`library-card ${getColorClass(card.color)}`}
-                    onMouseEnter={() => setPreviewCard(card)}
-                    onMouseLeave={() => setPreviewCard(null)}
-                  >
-                    <img 
-                      src={getCardImageUrl(card)} 
-                      alt={card.name_cn || card.name}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = `/cards/${card.card_number}.jpg`
-                      }}
-                    />
-                    <div className="library-card-info">
-                      <span className="card-number">{card.card_number}</span>
-                      {card.cost !== null && <span className="card-cost">{card.cost}</span>}
+                {libraryCards.map(card => {
+                  const inDeckCount = deckCards.get(card.card_number) || 0
+                  return (
+                    <div
+                      key={card.card_number}
+                      className={`library-card ${getColorClass(card.color)} ${inDeckCount > 0 ? 'in-deck' : ''}`}
+                      {...getCardProps(card)}
+                    >
+                      <img
+                        src={getCardImageUrl(card)}
+                        alt={card.name_cn || card.name}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `/cards/${card.card_number}.jpg`
+                        }}
+                      />
+                      <div className="library-card-info">
+                        <span className="card-number">{card.card_number}</span>
+                        {card.cost !== null && <span className="card-cost">{card.cost}</span>}
+                        {inDeckCount > 0 && (
+                          <span className="in-deck-badge">×{inDeckCount}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-              
+
               {hasMoreCards && (
-                <button 
+                <button
                   className="btn btn-load-more"
-                  onClick={loadMore}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    loadMore()
+                  }}
                   disabled={loadingLibrary}
                 >
                   {loadingLibrary ? '加载中...' : '加载更多'}
@@ -438,35 +621,44 @@ export default function DeckBuilder() {
         </div>
       </section>
 
-      {/* 卡牌详情预览悬浮框 */}
-      {previewCard && (
-        <div className="card-preview-popup">
-          <img 
-            src={getCardImageUrl(previewCard)} 
-            alt={previewCard.name_cn || previewCard.name}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = `/cards/${previewCard.card_number}.jpg`
+      {/* 卡牌预览 */}
+      {previewCard && (() => {
+        const card = previewCard as any
+        const isLeader = card.card_type === 'LEADER' || card.card_type === '领袖'
+        const cardNumber = card.card_number
+        const inDeckCount = deckCards.get(cardNumber) || 0
+        const isInDeck = inDeckCount > 0
+
+        return (
+          <CardPreview
+            card={previewCard}
+            isTouchDevice={isTouchDevice}
+            onClose={closePreview}
+            getCardImageUrl={getCardImageUrl}
+            getColorClass={getColorClass}
+            inDeck={isInDeck}
+            deckCount={inDeckCount}
+            onAdd={() => {
+              if (isLeader) {
+                // 设置为领袖卡
+                const libCard = libraryCards.find(c => c.card_number === cardNumber)
+                if (libCard) {
+                  setDeckLeaderCard(libCard)
+                }
+              } else {
+                // 添加到牌组或增加数量
+                addCardToDeck(cardNumber)
+              }
+              closePreview()
+            }}
+            onRemove={() => {
+              // 减少数量
+              removeCardFromDeck(cardNumber)
+              closePreview()
             }}
           />
-          <div className="preview-info">
-            <div className="preview-name">{previewCard.name_cn || previewCard.name}</div>
-            <div className="preview-meta">
-              <span className={`color-tag ${getColorClass(previewCard.color)}`}>
-                {previewCard.color}
-              </span>
-              <span>{previewCard.card_type}</span>
-              {previewCard.cost !== null && <span>费用: {previewCard.cost}</span>}
-              {previewCard.power !== null && <span>力量: {previewCard.power}</span>}
-            </div>
-            {previewCard.effect && (
-              <div className="preview-effect">{previewCard.effect}</div>
-            )}
-            {previewCard.trigger && (
-              <div className="preview-trigger">【触发】{previewCard.trigger}</div>
-            )}
-          </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

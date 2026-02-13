@@ -192,10 +192,14 @@ class ApiService {
   }
 
   /** Update an existing deck */
-  async updateDeck(deckId: string, deck: { name?: string; leaderCard?: string; cards?: string[] }): Promise<Deck> {
+  async updateDeck(deckId: string, deck: { name: string; leaderCard: string; cards: DeckCard[] }): Promise<Deck> {
     return this.request<Deck>(`/api/decks/${deckId}`, {
       method: 'PUT',
-      body: JSON.stringify(deck),
+      body: JSON.stringify({
+        name: deck.name,
+        leader_card_number: deck.leaderCard,
+        cards: deck.cards,
+      }),
     })
   }
 
